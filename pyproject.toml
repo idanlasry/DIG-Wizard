@@ -1,0 +1,15 @@
+[project]
+name = "dig-wizard"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "anthropic>=0.95.0",
+    "datetime>=6.0",
+    "dotenv>=0.9.9",
+    "google-generativeai>=0.8.6",
+    "pandas>=3.0.2",
+    "plotly>=6.7.0",
+    "streamlit>=1.56.0",
+]
