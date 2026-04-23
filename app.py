@@ -148,16 +148,46 @@ with col_main:
             except Exception as e:
                 st.error(f"Error loading file: {e}")
                 add_log(f"ERROR: Failed to read CSV. {e}", "error")
+elif st.session_state.stage == "AUDIT":
+        from profiler import get_dataset_profile
 
-    elif st.session_state.stage == "AUDIT":
         st.markdown("##### 🔍 STEP_02: DATA_AUDIT")
-        st.write(f"Data Source Active: {len(st.session_state.raw_data)} rows detected.")
+        df = st.session_state.raw_data
+        st.write(f"Data source active: **{len(df)} rows × {len(df.columns)} cols**")
 
         if st.button("INITIALIZE_DE_AGENT"):
-            add_log("DE_AGENT: Initializing data quality scan...")
-            # We will insert the Stage 4 Profiler here next
-            st.info("Agent is preparing to scan... (Logic integration pending)")
+            add_log("PROFILER: Starting hardcoded scan...", "system")
 
+            try:
+                profile = get_dataset_profile(df)
+                st.session_state.metadata = profile
+
+                # Log key facts into the terminal
+                rows = profile["shape"]["rows"]
+                cols = profile["shape"]["cols"]
+                dupes = profile["duplicate_rows"]
+                is_sample = profile["is_sample"]
+                num_count = len(profile["numeric_summary"])
+                cat_count = len(profile["categorical_summary"])
+
+                add_log(f"PROFILER: Scan complete. {rows}R × {cols}C.", "system")
+                add_log(f"PROFILER: {num_count} numeric cols, {cat_count} categorical cols.")
+                add_log(f"PROFILER: {dupes} duplicate rows found.")
+                if is_sample:
+                    add_log("PROFILER: Large dataset — sampled (250 head + 250 tail + 500 random).")
+                else:
+                    add_log("PROFILER: Full dataset used (under 5k rows).")
+
+                st.session_state.stage = "RESEARCH"
+                st.rerun()
+
+            except Exception as e:
+                add_log(f"ERROR: Profiler failed — {e}", "error")
+                st.error(f"Profiler error: {e}")
+
+            except Exception as e:
+                add_log(f"ERROR: Profiler failed — {e}", "error")
+                st.error(f"Profiler error: {e}")
     # (Placeholders for Research, Analysis, and Dashboard stages will go here)
 
 # --- COLUMN 3: THE ARCHIVE (The Consolidated Living Report) ---
