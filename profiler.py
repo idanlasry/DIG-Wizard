@@ -5,8 +5,8 @@ import numpy as np
 def get_dataset_profile(df: pd.DataFrame) -> dict:
     """
     Hardcoded pandas profiler.
-    Extracts structural metadata and statistical facts — no LLM involved.
-    Returns a single profile dict that gets stored in session_state.metadata.
+    Extracts structural metadata and statistical facts from the FULL dataset.
+    No LLM involved. No sampling. Returns a dict stored in session_state.metadata.
     """
     rows, cols = df.shape
 
@@ -54,7 +54,7 @@ def get_dataset_profile(df: pd.DataFrame) -> dict:
             "max": round(float(series.max()), 2),
             "outliers_iqr_count": int(len(iqr_outliers)),
             "outliers_zscore_count": int(len(zscore_outliers)),
-            # Pass a few actual outlier values so the DE Agent can reason about them
+            # A few actual outlier values so the DE Agent can reason about them
             "outlier_sample_values": [
                 round(float(v), 2) for v in iqr_outliers.head(5).tolist()
             ],
@@ -68,19 +68,31 @@ def get_dataset_profile(df: pd.DataFrame) -> dict:
         top_values = df[col].value_counts().head(5)
         categorical_summary[col] = {
             "unique_count": int(df[col].nunique()),
-            # Convert keys to str — some categories are ints stored as object dtype
+            # str keys — some categories are ints stored as object dtype
             "top_values": {str(k): int(v) for k, v in top_values.items()},
         }
 
-    # ── 4. ASSEMBLE FINAL PROFILE ──────────────────────────────────────
+    # ── 4. DATETIME DETECTION ──────────────────────────────────────────
+    datetime_flags = {}
+
+    for col in cat_cols:
+        sample = df[col].dropna().head(50)
+        try:
+            parsed = pd.to_datetime(sample, infer_datetime_format=True)
+            success_rate = parsed.notna().sum() / len(sample)
+            datetime_flags[col] = success_rate >= 0.8
+        except:
+            datetime_flags[col] = False
+
+    # ── 5. ASSEMBLE FINAL PROFILE ──────────────────────────────────────
     profile = {
         "shape": {"rows": rows, "cols": cols},
-        "is_sample": is_sample,
         "full_row_count": rows,
         "duplicate_rows": int(df.duplicated().sum()),
         "columns": column_info,
         "numeric_summary": numeric_summary,
         "categorical_summary": categorical_summary,
+        "datetime_flags": datetime_flags,  # ← new
     }
 
     return profile

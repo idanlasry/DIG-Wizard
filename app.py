@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
+from profiler import get_dataset_profile
+from pm_agent import run_pm_gate
+from de_agent import run_de_agent
 
 # ==========================================
 # 1. PAGE CONFIGURATION
@@ -24,7 +27,7 @@ st.markdown(
         background-color: #050505;
         color: #00ff9f;
     }
-    
+
     /* Neon Borders for Container sections */
     [data-testid="stVerticalBlock"] > div:has(div.stExpander),
     [data-testid="stVerticalBlock"] > div:has(div.stContainer) {
@@ -40,7 +43,7 @@ st.markdown(
         font-family: 'Fira Code', 'Courier New', monospace;
         font-size: 0.85rem;
     }
-    
+
     /* Cyber Header styling */
     .cyber-header {
         font-family: 'Orbitron', sans-serif;
@@ -73,14 +76,12 @@ st.markdown(
 # ==========================================
 # 3. BRAIN: SESSION STATE INITIALIZATION
 # ==========================================
-# This section ensures that data persists when the script reruns.
 if "initialized" not in st.session_state:
     st.session_state.initialized = True
-    st.session_state.stage = (
-        "START"  # START -> AUDIT -> RESEARCH -> ANALYSIS -> DASHBOARD
-    )
+    st.session_state.stage = "START"
     st.session_state.raw_data = None
     st.session_state.metadata = None
+    st.session_state.de_findings = None
     st.session_state.history_logs = [
         {
             "time": datetime.now().strftime("%H:%M:%S"),
@@ -92,7 +93,7 @@ if "initialized" not in st.session_state:
         "# DIG Analytics Executive Summary\n*Awaiting data ingestion...*"
     )
     st.session_state.current_path = None
-    st.session_state.analysis_results = []  # Stores all previous path outcomes
+    st.session_state.analysis_results = []
 
 
 def add_log(msg, log_type="info"):
@@ -111,29 +112,28 @@ st.divider()
 # ==========================================
 # 5. THE THREE-COLUMN LAYOUT
 # ==========================================
-# 1 part Log : 2 parts Interaction : 1 part Report
-col_terminal, col_main, col_report = st.columns([1, 2, 1])
+col_terminal, col_main, col_report = st.columns([1, 2, 2])
 
-# --- COLUMN 1: TERMINAL (The Agent Activity Logs) ---
+# --- COLUMN 1: TERMINAL ---
 with col_terminal:
     st.markdown("### 🖥️ SYSTEM_LOGS")
     with st.container(height=500, border=True):
         for log in st.session_state.history_logs:
-            # Color logic for different log types
             color = "#00ff9f" if log["type"] == "system" else "#ffffff"
             if log["type"] == "error":
                 color = "#ff0055"
 
             st.markdown(
-                f"<div class='terminal-font'><b>[{log['time']}]</b> <span style='color:{color}'>{log['msg']}</span></div>",
+                f"<div class='terminal-font'><b>[{log['time']}]</b> "
+                f"<span style='color:{color}'>{log['msg']}</span></div>",
                 unsafe_allow_html=True,
             )
 
-# --- COLUMN 2: COMMAND CENTER (User Interaction Area) ---
+# --- COLUMN 2: COMMAND CENTER ---
 with col_main:
     st.markdown("### 🕹️ COMMAND_CENTER")
 
-    # Logic Router based on the 'Stage'
+    # ── STAGE: START ───────────────────────────────────────────────────
     if st.session_state.stage == "START":
         st.markdown("##### 📥 STEP_01: DATA_INTAKE")
         uploaded_file = st.file_uploader("UPLOAD_CSV_FILE", type="csv")
@@ -143,14 +143,17 @@ with col_main:
                 df = pd.read_csv(uploaded_file)
                 st.session_state.raw_data = df
                 st.session_state.stage = "AUDIT"
-                add_log(f"DATA_INGESTED: {len(df)} rows, {len(df.columns)} columns.")
+                add_log(
+                    f"DATA_INGESTED: {len(df)} rows, {len(df.columns)} columns.",
+                    "system",
+                )
                 st.rerun()
             except Exception as e:
                 st.error(f"Error loading file: {e}")
                 add_log(f"ERROR: Failed to read CSV. {e}", "error")
-elif st.session_state.stage == "AUDIT":
-        from profiler import get_dataset_profile
 
+    # ── STAGE: AUDIT ───────────────────────────────────────────────────
+    elif st.session_state.stage == "AUDIT":
         st.markdown("##### 🔍 STEP_02: DATA_AUDIT")
         df = st.session_state.raw_data
         st.write(f"Data source active: **{len(df)} rows × {len(df.columns)} cols**")
@@ -162,38 +165,114 @@ elif st.session_state.stage == "AUDIT":
                 profile = get_dataset_profile(df)
                 st.session_state.metadata = profile
 
-                # Log key facts into the terminal
                 rows = profile["shape"]["rows"]
-                cols = profile["shape"]["cols"]
+                cols_count = profile["shape"]["cols"]
                 dupes = profile["duplicate_rows"]
-                is_sample = profile["is_sample"]
                 num_count = len(profile["numeric_summary"])
                 cat_count = len(profile["categorical_summary"])
 
-                add_log(f"PROFILER: Scan complete. {rows}R × {cols}C.", "system")
-                add_log(f"PROFILER: {num_count} numeric cols, {cat_count} categorical cols.")
+                add_log(f"PROFILER: Scan complete. {rows}R × {cols_count}C.", "system")
+                add_log(
+                    f"PROFILER: {num_count} numeric cols, {cat_count} categorical cols."
+                )
                 add_log(f"PROFILER: {dupes} duplicate rows found.")
-                if is_sample:
-                    add_log("PROFILER: Large dataset — sampled (250 head + 250 tail + 500 random).")
+
+                # ── DE AGENT ──────────────────────────────────────────
+                add_log("DE_AGENT: Calling DE Agent...", "system")
+                de_response = run_de_agent(profile)
+
+                if "error" in de_response:
+                    add_log(f"DE_ERROR: {de_response['detail']}", "error")
+                    st.error(f"DE Agent failed: {de_response['detail']}")
                 else:
-                    add_log("PROFILER: Full dataset used (under 5k rows).")
+                    st.session_state.de_findings = de_response
+                    add_log(
+                        f"DE_AGENT: Quality score {de_response['quality_score']}/10.",
+                        "system",
+                    )
+                    add_log(
+                        f"DE_AGENT: {len(de_response['quality_issues'])} issue(s), {len(de_response['outliers'])} outlier(s)."
+                    )
 
-                st.session_state.stage = "RESEARCH"
-                st.rerun()
+                    # ── PM GATE ────────────────────────────────────────
+                    add_log("PM_GATE: Calling PM Agent at AUDIT...", "system")
+                    pm_response = run_pm_gate(
+                        current_stage="AUDIT",
+                        metadata=profile,
+                        de_findings=st.session_state.de_findings,
+                    )
+
+                    if "error" in pm_response:
+                        add_log(f"PM_ERROR: {pm_response['detail']}", "error")
+                        st.error(f"PM Agent failed: {pm_response['detail']}")
+                    else:
+                        add_log(f"PM: {pm_response['summary_for_log']}", "system")
+                        st.info(pm_response["user_message"])
+
+                        # ── SEED LIVING REPORT ─────────────────────────
+                        de = st.session_state.de_findings
+                        issues_md = (
+                            "\n".join(
+                                f"- **{i['issue']}** ({i['affected_column']}): {i['detail']}"
+                                for i in de["quality_issues"]
+                            )
+                            or "_None detected._"
+                        )
+                        outliers_md = (
+                            "\n".join(
+                                f"- **{o['column']}** — {o['value']} ({o['reason']})"
+                                for o in de["outliers"]
+                            )
+                            or "_None detected._"
+                        )
+
+                        st.session_state.master_report = f"""# DIG Analytics Executive Summary
+
+## Dataset Audit
+
+## Dataset Audit
+**PM Assessment:** {pm_response["user_message"]}
+
+
+**Quality Score:** {de["quality_score"]}/10 — {de["quality_score_reason"]}
+
+**Dataset:** {de["dataset_summary"]["total_rows"]:,} rows × {de["dataset_summary"]["total_columns"]} columns
+
+### Issues Detected
+{issues_md}
+
+### Outliers Flagged
+{outliers_md}
+
+---
+*Awaiting research path selection...*
+"""
+                        if pm_response.get("stage_transition"):
+                            st.session_state.stage = pm_response["stage_transition"]
+                            st.rerun()
 
             except Exception as e:
                 add_log(f"ERROR: Profiler failed — {e}", "error")
                 st.error(f"Profiler error: {e}")
 
-            except Exception as e:
-                add_log(f"ERROR: Profiler failed — {e}", "error")
-                st.error(f"Profiler error: {e}")
-    # (Placeholders for Research, Analysis, and Dashboard stages will go here)
+    # ── STAGE: RESEARCH (placeholder) ─────────────────────────────────
+    elif st.session_state.stage == "RESEARCH":
+        st.markdown("##### 🔬 STEP_03: RESEARCH_PATHS")
+        st.info("Researcher Agent logic coming in Stage 9.")
 
-# --- COLUMN 3: THE ARCHIVE (The Consolidated Living Report) ---
+    # ── STAGE: ANALYSIS (placeholder) ─────────────────────────────────
+    elif st.session_state.stage == "ANALYSIS":
+        st.markdown("##### 📊 STEP_04: ANALYSIS")
+        st.info("Stats Expert + DA Agent logic coming in Stage 10.")
+
+    # ── STAGE: DASHBOARD (placeholder) ────────────────────────────────
+    elif st.session_state.stage == "DASHBOARD":
+        st.markdown("##### 📈 STEP_05: DASHBOARD")
+        st.info("BI Developer Agent + Plotly rendering coming in Stage 11.")
+
+# --- COLUMN 3: LIVING REPORT ---
 with col_report:
     st.markdown("### 📑 LIVING_REPORT")
-    # This container displays the synthesized findings
     with st.container(height=600, border=True):
         st.markdown(st.session_state.master_report)
 
@@ -207,4 +286,4 @@ status_cols[1].caption(f"INITIALIZED: {st.session_state.initialized}")
 status_cols[2].caption(
     f"ROWS: {len(st.session_state.raw_data) if st.session_state.raw_data is not None else 0}"
 )
-status_cols[3].caption("MODEL: CLAUDE-3.5-SONNET")
+status_cols[3].caption("MODEL: CLAUDE-SONNET-4")
