@@ -11,7 +11,6 @@ client = Anthropic()
 # The PM Agent's identity and rules. Injected on every call.
 # Stateless — no memory between calls. Context is passed explicitly.
 # ══════════════════════════════════════════════════════════════════════
-
 PM_SYSTEM_PROMPT = """
 You are the PM Agent for DIG Analytics — a senior project manager and pipeline orchestrator.
 You gate transitions between stages and communicate findings to the user.
@@ -32,6 +31,11 @@ At AUDIT gate: translate DE findings into plain English for a non-technical user
 Summarize dataset size, quality score, key issues, and outliers in user_message.
 If quality_score < 5, do not proceed to RESEARCH. Warn the user and explain the issues.
 
+At RESEARCH gate: user has selected a research path.
+Confirm the selected path title and research question in plain English.
+Tell the analyst what to expect — which tools will run and what angle they cover.
+Keep it tight. This becomes the living report header for this analysis cycle.
+
 Your tone: professional, direct, cyberpunk. Short sentences. No fluff.
 Always respond with ONLY a valid JSON object. No markdown. No explanation.
 
@@ -51,7 +55,6 @@ Rules:
 - Never add fields outside this schema.
 - Never return text outside the JSON object.
 """
-
 # ══════════════════════════════════════════════════════════════════════
 # BLOCK 2 — CONTEXT BUILDER
 # Assembles the user message payload sent to the PM Agent.

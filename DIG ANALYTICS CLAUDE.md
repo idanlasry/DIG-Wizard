@@ -203,7 +203,7 @@ CSV Upload (up to 20MB)
 
 ---
 
-#### Stage 7 — PM Agent (Concierge) ⏳
+#### Stage 7 — PM Agent (Concierge) ✅
 **What to build:** The most important agent. Greeting logic, stage gate transitions, context passing. Receives summary of previous stage output and generates the user-facing message + next action options.
 
 **Concepts to understand:**
@@ -214,7 +214,9 @@ CSV Upload (up to 20MB)
 
 ---
 
-#### Stage 8 — Data Engineer Agent ⏳
+#### Stage 8 — Data Engineer Agent ✅
+**What was built:** LLM call wired to the Anthropic API — receives the pandas profiler output dict as `json.dumps(metadata)` and returns DE findings validated via Pydantic. `app.py` updated with tabbed living report UI and three new session state keys: `pm_summary` (PM's user-facing gate message), `pm_ready` (bool gate flag for stage transitions), and `report_view` (controls which tab is active in the living report panel).
+
 **What to build:** LLM call that receives the pandas profiler output dict (Stage 4) and returns the finalized quality JSON. Prompt already written — wire it to the API with Pydantic validation.
 
 **Prompt status:** ✅ FINALIZED (see Prompt Library below)
@@ -226,7 +228,9 @@ CSV Upload (up to 20MB)
 
 ---
 
-#### Stage 9 — Researcher Agent ⏳
+#### Stage 9 — Researcher Agent ✅
+**What was built:** Researcher Agent fully wired — generates exactly 5 answerable research paths as JSON (validated via Pydantic), each with an ordered list of ToolInstruction objects. Key decisions: (1) stretch_questions field scoped out for now — unanswerable paths deferred to a future iteration; (2) PM system prompt updated at the RESEARCH gate to write path title + research question + tool overview into user_message, propagating automatically to the living report — no app.py or context builder changes required.
+
 **What to build:** Receives profiler output + DE findings → generates exactly 5 answerable business research paths as JSON. User selects one path → triggers Stage 6 tool switchboard.
 
 **Concepts to understand:**
@@ -363,8 +367,8 @@ Rules:
 
 ## Current Status
 
-**Active stage:** Stage 7 — PM Agent
-**Stages complete:** 1, 2, 3, 4, 5, 6
+**Active stage:** Stage 10 — DA / Stats Agent
+**Stages complete:** 1, 2, 3, 4, 5, 6, 7, 8, 9
 **Stages remaining:** 4–15
 **Deployment target:** Streamlit Cloud (free, shareable URL)
 **Build environment:** VS Code + Claude Code

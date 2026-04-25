@@ -1,0 +1,194 @@
+# da_agent.py
+import json
+from anthropic import Anthropic
+from pydantic import BaseModel, ValidationError, field_validator
+
+client = Anthropic()
+
+# ══════════════════════════════════════════════════════════════════════
+# BLOCK 1 — SYSTEM PROMPT
+# DA Agent identity and output rules.
+# Stateless — receives path context + all tool results on every call.
+# Never does math. Only interprets what pandas returned.
+# ══════════════════════════════════════════════════════════════════════
+
+DA_SYSTEM_PROMPT = """
+You are a senior data analyst interpreting the output of automated pandas analysis tools.
+
+You receive:
+- A research path (title + business question)
+- One or more tool results from hardcoded pandas functions
+
+Your job: interpret what the numbers mean for the business. Do not restate the numbers — explain what they imply.
+
+Respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks.
+
+Use exactly this structure:
+
+{
+  "headline": "<one punchy sentence summarizing the key finding>",
+  "key_insights": [
+    "<insight 1 — a business implication, not a number restatement>",
+    "<insight 2>",
+    "<insight 3>"
+  ],
+  "supporting_stats": [
+    {
+      "label": "<what this stat is>",
+      "value": "<the number or value>",
+      "context": "<what it means>"
+    }
+  ],
+  "recommended_viz": "<one of: bar_chart, line_chart, scatter_plot, heatmap, histogram, funnel_chart, table>",
+  "viz_rationale": "<one sentence — why this viz type fits the data>",
+  "caveats": "<any limitations, data quality warnings, or follow-up questions — or null if none>"
+}
+
+Rules:
+- key_insights must have exactly 3 items.
+- supporting_stats should have 2–5 items drawn directly from the tool results.
+- recommended_viz must be exactly one of the allowed values.
+- caveats is a string or null — never an array.
+- Never invent numbers not present in the tool results.
+- Never add fields outside this schema.
+- Never return text outside the JSON object.
+"""
+
+# ══════════════════════════════════════════════════════════════════════
+# BLOCK 2 — PYDANTIC VALIDATION MODELS
+# ══════════════════════════════════════════════════════════════════════
+
+VALID_VIZ_TYPES = {
+    "bar_chart",
+    "line_chart",
+    "scatter_plot",
+    "heatmap",
+    "histogram",
+    "funnel_chart",
+    "table",
+}
+
+
+class SupportingStat(BaseModel):
+    label: str
+    value: str
+    context: str
+
+
+class DAFindings(BaseModel):
+    headline: str
+    key_insights: list[str]
+    supporting_stats: list[SupportingStat]
+    recommended_viz: str
+    viz_rationale: str
+    caveats: str | None
+
+    @field_validator("key_insights")
+    @classmethod
+    def must_have_three_insights(cls, v):
+        if len(v) != 3:
+            raise ValueError(f"key_insights must have exactly 3 items, got {len(v)}")
+        return v
+
+    @field_validator("supporting_stats")
+    @classmethod
+    def must_have_two_to_five_stats(cls, v):
+        if not (2 <= len(v) <= 5):
+            raise ValueError(f"supporting_stats must have 2–5 items, got {len(v)}")
+        return v
+
+    @field_validator("recommended_viz")
+    @classmethod
+    def viz_must_be_valid(cls, v):
+        if v not in VALID_VIZ_TYPES:
+            raise ValueError(
+                f"'{v}' is not a valid viz type. Must be one of: {sorted(VALID_VIZ_TYPES)}"
+            )
+        return v
+
+
+# ══════════════════════════════════════════════════════════════════════
+# BLOCK 3 — CONTEXT BUILDER
+# Packages the research path + all tool results into one prompt string.
+# ══════════════════════════════════════════════════════════════════════
+
+
+def build_da_context(current_path: dict, tool_results: list[dict]) -> str:
+    """
+    Builds the user-turn message for the DA Agent.
+    Includes: research question, tool results (all of them, serialized).
+    """
+    parts = []
+
+    parts.append(f"RESEARCH PATH: {current_path.get('title', '?')}")
+    parts.append(f"BUSINESS QUESTION: {current_path.get('question', '?')}")
+    parts.append("")
+    parts.append(f"TOOL RESULTS ({len(tool_results)} total):")
+
+    for i, result in enumerate(tool_results, 1):
+        tool_name = result.get("tool", f"tool_{i}")
+        parts.append(f"\n--- Tool {i}: {tool_name} ---")
+        parts.append(json.dumps(result, indent=2))
+
+    parts.append("\nBased on the above, generate your DA findings JSON.")
+
+    return "\n".join(parts)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# BLOCK 4 — THE DA CALL
+# ══════════════════════════════════════════════════════════════════════
+
+
+def call_da_agent(current_path: dict, tool_results: list[dict]) -> dict:
+    """
+    Sends path + tool results to DA Agent. Returns parsed response dict.
+    Raises ValueError if JSON is malformed.
+    Raises Exception for API failures.
+    """
+    context = build_da_context(current_path, tool_results)
+
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=2000,
+        system=DA_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": context}],
+    )
+
+    raw_text = (
+        response.content[0]
+        .text.strip()
+        .removeprefix("```json")
+        .removesuffix("```")
+        .strip()
+    )
+
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"DA Agent returned invalid JSON: {e}\nRaw output: {raw_text}")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# BLOCK 5 — GATE RUNNER
+# Called from app.py. Never raises — returns error dict on failure.
+# ══════════════════════════════════════════════════════════════════════
+
+
+def run_da_agent(current_path: dict, tool_results: list[dict]) -> dict:
+    """
+    Full DA gate execution.
+    Returns validated findings dict on success.
+    Returns error dict on failure — never raises.
+    """
+    try:
+        raw = call_da_agent(current_path, tool_results)
+        findings = DAFindings(**raw)
+        return findings.model_dump()
+
+    except ValidationError as e:
+        return {"error": "validation_failed", "detail": str(e)}
+    except ValueError as e:
+        return {"error": "invalid_json", "detail": str(e)}
+    except Exception as e:
+        return {"error": "api_failure", "detail": str(e)}
