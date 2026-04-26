@@ -9,6 +9,7 @@ from researcher_agent import run_researcher_agent
 from da_agent import run_da_agent
 from switchboard import run_tool
 from bi_agent import run_bi_agent
+from synthesis_agent import run_synthesis_agent
 import plotly.graph_objects as go
 
 
@@ -129,6 +130,7 @@ if "initialized" not in st.session_state:
     st.session_state.tool_result = None
     st.session_state.da_findings = None
     st.session_state.chart_configs = None
+    st.session_state.synthesis = None
     st.session_state.pm_final_summary = None
 
 
@@ -137,6 +139,119 @@ def add_log(msg, log_type="info"):
     st.session_state.history_logs.append(
         {"time": datetime.now().strftime("%H:%M:%S"), "msg": msg, "type": log_type}
     )
+
+
+def build_html_report(
+    pm_final_summary: str,
+    chart_configs: dict,
+    synthesis: dict,
+    metadata: dict,
+    de_findings: dict,
+    analysis_results: list,
+) -> str:
+    kpis = chart_configs["kpis"]
+    charts = chart_configs["charts"]
+    narrative = synthesis["narrative"]
+    recommendations = synthesis["recommendations"]
+
+    kpi_items = "".join(
+        f"<div class='kpi'><strong>{k['label']}</strong>"
+        f"<div class='value'>{k['value']}</div>"
+        f"<div class='context'>{k['context']}</div></div>"
+        for k in kpis
+    )
+
+    # Dataset snapshot stats
+    total_customers = metadata["shape"]["rows"]
+    total_cols = metadata["shape"]["cols"]
+    duplicate_rows = metadata["duplicate_rows"]
+    quality_score = de_findings.get("quality_score", "N/A")
+    try:
+        churn_rate = f"{metadata['numeric_summary']['Exited']['mean'] * 100:.1f}%"
+    except (KeyError, TypeError):
+        churn_rate = "N/A"
+
+    snapshot_cards = "".join(
+        f"<div class='snapshot-card'><div class='label'>{label}</div><div class='val'>{value}</div></div>"
+        for label, value in [
+            ("Total Customers", f"{total_customers:,}"),
+            ("Features", total_cols),
+            ("Churn Rate", churn_rate),
+            ("Duplicate Rows", duplicate_rows),
+            ("Data Quality Score", quality_score),
+        ]
+    )
+
+    chart_blocks = []
+    for i, chart in enumerate(charts):
+        chart_type = chart["chart_type"]
+        if chart_type == "bar":
+            trace = go.Bar(x=chart["x"], y=chart["y"], marker_color="#00ff9f")
+        elif chart_type == "line":
+            trace = go.Scatter(x=chart["x"], y=chart["y"], mode="lines",
+                               line=dict(color="#00ff9f", width=2))
+        elif chart_type == "scatter":
+            trace = go.Scatter(x=chart["x"], y=chart["y"], mode="markers",
+                               marker=dict(color="#00ff9f", size=6))
+        else:
+            trace = go.Heatmap(z=chart["y"], colorscale="Viridis")
+        fig = go.Figure(data=[trace])
+        fig.update_layout(
+            title=chart["title"],
+            xaxis_title=chart["x_label"],
+            yaxis_title=chart["y_label"],
+            height=280,
+            margin=dict(l=40, r=20, t=40, b=40),
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#f9f9f9",
+            font=dict(color="#111111", size=10),
+        )
+        # Plotly CDN is loaded in <head>; all chart divs use False to avoid re-bundling
+        fig_html = fig.to_html(full_html=False, include_plotlyjs=False)
+        explanation = chart.get("explanation", "")
+        headline = ""
+        if i < len(analysis_results):
+            headline = analysis_results[i].get("da_findings", {}).get("headline", "")
+        chart_blocks.append(
+            f"<div class='chart-block'><h3>{headline}</h3>{fig_html}"
+            f"<em>{explanation}</em></div>"
+        )
+
+    recs_html = '<ul class="recs">' + "".join(f"<li>{r}</li>" for r in recommendations) + "</ul>"
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>DIG Analytics Report</title>
+<script src="https://cdn.plot.ly/plotly-3.5.0.min.js"></script>
+<style>
+body{{font-family:'Segoe UI',Arial,sans-serif;background:#ffffff;color:#111111;padding:2rem 3rem;max-width:1400px;margin:0 auto;font-size:0.85rem}}
+h1{{font-size:1.4rem;margin-bottom:0.3rem}}
+h2{{font-size:1rem;margin:1rem 0 0.4rem;border-bottom:1px solid #ddd;padding-bottom:0.2rem}}
+h3{{font-size:0.85rem;margin:0.3rem 0}}
+p{{margin:0.3rem 0;font-size:0.8rem;line-height:1.4}}
+.kpi-row{{display:flex;gap:0.6rem;flex-wrap:nowrap;margin:0.5rem 0}}
+.kpi{{border:1px solid #ddd;border-radius:4px;padding:0.5rem 0.8rem;flex:1;min-width:0}}
+.kpi strong{{font-size:0.75rem;color:#555;display:block}}
+.kpi .value{{font-size:1.1rem;font-weight:bold;margin:0.1rem 0}}
+.kpi .context{{font-size:0.7rem;color:#666}}
+.snapshot-row{{display:flex;gap:0.6rem;margin:0.5rem 0}}
+.snapshot-card{{border:1px solid #eee;border-radius:4px;padding:0.4rem 0.8rem;flex:1;text-align:center;background:#f9f9f9}}
+.snapshot-card .label{{font-size:0.7rem;color:#888}}
+.snapshot-card .val{{font-size:1rem;font-weight:bold}}
+.chart-grid{{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:0.5rem 0}}
+.chart-block{{border:1px solid #eee;border-radius:4px;padding:0.5rem}}
+.chart-block em{{font-size:0.72rem;color:#555;display:block;margin-top:0.3rem}}
+.recs{{margin:0.5rem 0;padding-left:1.2rem}}
+.recs li{{font-size:0.78rem;margin-bottom:0.3rem;line-height:1.4}}
+.narrative{{background:#f5f5f5;border-left:3px solid #333;padding:0.6rem 1rem;font-size:0.8rem;line-height:1.5;margin:0.5rem 0}}
+</style></head><body>
+<h1>DIG Analytics Executive Report</h1>
+<h2>Executive Summary</h2><div class="narrative">{pm_final_summary}</div>
+<h2>Dataset Snapshot</h2><div class="snapshot-row">{snapshot_cards}</div>
+<h2>Key Performance Indicators</h2><div class="kpi-row">{kpi_items}</div>
+<h2>Dashboard Analysis</h2><div class="chart-grid">{''.join(chart_blocks)}</div>
+<h2>Strategic Narrative</h2><div class="narrative">{narrative}</div>
+<h2>Recommendations</h2>{recs_html}
+</body></html>"""
 
 
 # ==========================================
@@ -620,7 +735,22 @@ with col_main:
                 add_log("BI_AGENT: Dashboard config generated.", "system")
                 st.rerun()
 
-        # ── PHASE C: RENDER DASHBOARD ─────────────────────────────────
+        # ── PHASE D: SYNTHESIS AGENT ──────────────────────────────────
+        elif st.session_state.synthesis is None:
+            with st.spinner("SYNTHESIS_AGENT: Generating recommendations..."):
+                syn_response = run_synthesis_agent(
+                    st.session_state.analysis_results,
+                    st.session_state.chart_configs,
+                )
+            if "error" in syn_response:
+                add_log(f"SYN_ERROR: {syn_response['detail']}", "error")
+                st.error(f"Synthesis Agent failed: {syn_response['detail']}")
+            else:
+                st.session_state.synthesis = syn_response
+                add_log("SYNTHESIS_AGENT: Recommendations generated.", "system")
+                st.rerun()
+
+        # ── PHASE E: RENDER DASHBOARD ─────────────────────────────────
         else:
             cfg = st.session_state.chart_configs
 
@@ -660,6 +790,31 @@ with col_main:
                 )
                 st.plotly_chart(fig, use_container_width=True)
                 st.caption(f"Source: {chart['source_path']}")
+                if chart.get("explanation"):
+                    st.markdown(f"*{chart['explanation']}*")
+
+            # Recommendations
+            st.markdown("---")
+            st.markdown("#### RECOMMENDATIONS")
+            for rec in st.session_state.synthesis["recommendations"]:
+                st.markdown(f"- {rec}")
+
+            # Download report
+            st.markdown("---")
+            html_bytes = build_html_report(
+                st.session_state.pm_final_summary,
+                st.session_state.chart_configs,
+                st.session_state.synthesis,
+                st.session_state.metadata,
+                st.session_state.de_findings,
+                st.session_state.analysis_results,
+            ).encode("utf-8")
+            st.download_button(
+                label="⬇ DOWNLOAD_REPORT.html",
+                data=html_bytes,
+                file_name="dig_report.html",
+                mime="text/html",
+            )
 
 # --- COLUMN 3: LIVING REPORT ---
 with col_report:

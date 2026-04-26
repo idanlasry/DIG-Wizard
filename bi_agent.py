@@ -40,7 +40,8 @@ Use exactly this structure:
       "y_label": "<y axis label>",
       "x": ["<value1>", "<value2>"],
       "y": [<number1>, <number2>],
-      "source_path": "<title of the research path this data came from>"
+      "source_path": "<title of the research path this data came from>",
+      "explanation": "<1-2 sentence plain-language explanation for a non-technical executive>"
     }
   ],
   "dashboard_narrative": "<2-3 sentence executive summary across all paths>"
@@ -49,11 +50,14 @@ Use exactly this structure:
 Rules:
 - kpis must have 3-6 items.
 - charts must have 2-4 items.
+- Order kpis by impact: most important KPI first.
+- Order charts by strength of finding: strongest insight first.
 - Only use values that exist in the da_findings supporting_stats or key_insights you received.
 - Never invent numbers.
 - x and y arrays must have the same length.
 - y values must be numbers (int or float), not strings.
 - chart_type must be exactly one of: bar, line, scatter, heatmap.
+- Write each chart explanation in plain stakeholder language, as if presenting to a non-technical executive who has never seen this data.
 - Never add fields outside this schema.
 - Never return text outside the JSON object.
 """
@@ -85,6 +89,7 @@ class ChartConfig(BaseModel):
     x: list
     y: list
     source_path: str
+    explanation: str
 
     @field_validator("chart_type")
     @classmethod
