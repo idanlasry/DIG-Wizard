@@ -74,4 +74,6 @@ The Researcher Agent returns `ToolInstruction` objects `{"tool": "<name>", "para
 
 The project follows a 15-stage build plan detailed in [DIG ANALYTICS CLAUDE.md](DIG%20ANALYTICS%20CLAUDE.md). **Current stage: 10 — DA / Stats Agent.** Stages 1–9 are complete.
 
-Next to build: DA/Stats Agent — receives the selected research path + accumulated Starter Kit tool results, interprets them statistically, and returns a findings JSON with insight, supporting stats, and a recommended visualization type.
+Stage 10 multi-path loop support is complete: `pm_summaries` accumulates all PM messages, `analysis_results` accumulates all DA findings, the 3-path cap is enforced in the ANALYSIS nav block, and the PM Agent receives `previous_findings` context for synthesis paragraphs at path N>1. The report panel now has 5 tabs including DA FINDINGS (multi-path) and PM LOG.
+
+Next to build: Stage 11 — BI Developer Agent (Plotly chart config from DA findings).

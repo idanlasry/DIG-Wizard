@@ -27,13 +27,18 @@ STAGE RULES:
 - ANALYSIS → ANALYSIS: when user selects a new path (loop continues)
 - ANALYSIS → DASHBOARD: when user confirms they are done with research paths
 
-At AUDIT gate: translate DE findings into plain English for a non-technical user.
-Summarize dataset size, quality score, key issues, and outliers in user_message.
-If quality_score < 5, do not proceed to RESEARCH. Warn the user and explain the issues.
+At AUDIT gate: you will receive COLUMN_NAMES from the dataset. Use them to infer the
+domain, key entities, and what types of analysis this data is suited for. Write this
+as a brief opening paragraph in user_message — do NOT ask the user for context, infer
+it yourself. Then summarize dataset size, quality score, key issues, and outliers in
+plain English for a non-technical user.
+Set ready_to_proceed to true if quality_score >= 5. Set it to false only if quality_score < 5,
+and warn the user. Do not set ready_to_proceed to false for any other reason at this gate.
 
-At RESEARCH gate: user has selected a research path.
-Confirm the selected path title and research question in plain English.
+At RESEARCH gate: confirm the selected path title and research question in plain English.
 Tell the analyst what to expect — which tools will run and what angle they cover.
+When PREVIOUS FINDINGS is present in context, open user_message with a one-paragraph
+synthesis of what's been found so far, then introduce the new path as "building on this."
 Keep it tight. This becomes the living report header for this analysis cycle.
 
 Your tone: professional, direct, cyberpunk. Short sentences. No fluff.
@@ -68,6 +73,7 @@ def build_pm_context(
     de_findings: dict = None,
     selected_path: dict = None,
     analysis_results: list = None,
+    previous_findings: list = None,
     user_note: str = None,
 ) -> str:
     """
@@ -80,10 +86,13 @@ def build_pm_context(
 
     if metadata:
         shape = metadata.get("shape", {})
+        col_names = [c["name"] for c in metadata.get("columns", []) if "name" in c]
+        col_str = ", ".join(col_names) if col_names else "unknown"
         parts.append(
             f"DATASET: {shape.get('rows', '?')} rows, {shape.get('cols', '?')} columns. "
             f"Duplicate rows: {metadata.get('duplicate_rows', '?')}."
         )
+        parts.append(f"COLUMN_NAMES: {col_str}")
 
     if de_findings:
         score = de_findings.get("quality_score", "?")
@@ -91,6 +100,18 @@ def build_pm_context(
         parts.append(
             f"DE_FINDINGS: Quality score {score}/10. {len(issues)} issue(s) detected."
         )
+
+    if previous_findings:
+        finding_lines = []
+        for i, item in enumerate(previous_findings, 1):
+            da = item.get("da_findings", {})
+            title = item.get("path", {}).get("title", "?")
+            headline = da.get("headline", "?")
+            insights = da.get("key_insights", [])[:3]
+            finding_lines.append(
+                f"Path {i} — {title}: {headline}. Key insights: {', '.join(insights)}."
+            )
+        parts.append("PREVIOUS FINDINGS:\n" + "\n".join(finding_lines))
 
     if selected_path:
         parts.append(
@@ -166,6 +187,7 @@ def run_pm_gate(
     de_findings: dict = None,
     selected_path: dict = None,
     analysis_results: list = None,
+    previous_findings: list = None,
     user_note: str = None,
 ) -> dict:
     """
@@ -180,6 +202,7 @@ def run_pm_gate(
             de_findings=de_findings,
             selected_path=selected_path,
             analysis_results=analysis_results,
+            previous_findings=previous_findings,
             user_note=user_note,
         )
         response = call_pm_agent(context)

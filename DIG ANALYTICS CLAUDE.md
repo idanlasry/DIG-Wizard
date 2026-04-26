@@ -1,5 +1,5 @@
 # DIG Analytics Agent — Claude Context File
-> This file is the shared context layer between Claude.ai and Claude Code sessions.
+> Shared context layer between Claude.ai and Claude Code sessions.
 > Always read this first before making changes to any agent prompt or project file.
 
 ---
@@ -8,7 +8,7 @@
 
 **DIG** = Description → Introspection → Goal Setting
 
-A multi-agent data analysis platform. User uploads a CSV → hardcoded pandas layer extracts facts → 5 specialized LLM agents interpret and analyze → PM agent orchestrates the pipeline via a cyberpunk Streamlit UI → final output is a **Consolidated Living Report** + interactive Plotly dashboard.
+Multi-agent data analysis platform. User uploads a CSV → hardcoded pandas layer extracts facts → 5 specialized LLM agents interpret and analyze → PM agent orchestrates via a cyberpunk Streamlit UI → final output is a **Consolidated Living Report** + interactive Plotly dashboard.
 
 ---
 
@@ -19,8 +19,7 @@ A multi-agent data analysis platform. User uploads a CSV → hardcoded pandas la
 | UI | Streamlit + custom CSS | Cyberpunk 3-column layout |
 | Data layer | Pandas | All math, counting, profiling — never LLM |
 | Orchestration | Python (parametric function calling) | LLM triggers pre-written modules |
-| LLM — PM / Synthesis | Anthropic (Claude Sonnet) | Orchestration, synthesis, report writing |
-| LLM — Utility / Formatting | OpenAI (GPT-4o mini) | Cheaper utility calls |
+| LLM | Anthropic Claude Haiku | All agent calls (upgrade to Sonnet post-MVP) |
 | Validation | Pydantic v2 | Validate all LLM JSON outputs |
 | State | Streamlit session_state | Pipeline memory across reruns |
 | Env management | uv | Fast dependency resolution |
@@ -30,39 +29,60 @@ A multi-agent data analysis platform. User uploads a CSV → hardcoded pandas la
 
 ## The 5 Agents
 
-| # | Agent | DIG Stage | Responsibility |
-|---|-------|-----------|----------------|
-| 1 | 💬 PM Agent | Orchestrator | Gates transitions, passes context, synthesizes findings |
-| 2 | 🔧 Data Engineer | D — Description | Interprets pandas profiler output — quality score, issues, outliers |
-| 3 | 📊 Stats Expert | I — Introspection | Correlations, trends, distributions, statistical patterns |
-| 4 | 🔍 Researcher | I — Introspection | Generates 5 high-value answerable business research paths, each containing an ordered list of 3–5 Starter Kit tool instructions |
-| 5 | 📈 BI Developer | G — Goal Setting | Maps DA results to Plotly chart configs |
+| # | Agent | File | Responsibility |
+|---|-------|------|----------------|
+| 1 | 💬 PM Agent | `pm_agent.py` | Gates transitions, passes context, synthesizes findings |
+| 2 | 🔧 Data Engineer | `de_agent.py` | Interprets profiler output — quality score, issues, outliers |
+| 3 | 🔍 Researcher | `researcher_agent.py` | Generates 5 research paths with ordered tool instructions |
+| 4 | 📊 DA / Stats Expert | `da_agent.py` | Interprets Starter Kit results — insights, stats, viz recommendation |
+| 5 | 📈 BI Developer | `bi_agent.py` | Receives all analysis_results → decides KPIs + chart configs |
 
 ---
 
 ## Pipeline Flow
 
 ```
-CSV Upload (up to 20MB)
+CSV Upload
     ↓
-[HARDCODED] Pandas Profiler runs → schema, nulls, outliers, distributions
+[HARDCODED] Pandas Profiler → schema, nulls, outliers, distributions → session_state.metadata
     ↓
-[LLM] Data Engineer interprets profiler output → quality score + issues JSON
+[LLM] DE Agent → quality score + issues JSON → session_state.de_findings
     ↓
-[PM GATE 1] PM summarizes findings → user confirms or adds note
+[PM GATE — AUDIT] Summarizes DE findings → user confirms
     ↓
-[LLM] Researcher generates 5 research paths → user selects one
+[LLM] Researcher → 5 research paths → user selects one → session_state.current_path
     ↓
-[HARDCODED] Starter Kit function runs based on selected path
+[PM GATE — RESEARCH] Confirms selected path → transitions to ANALYSIS
     ↓
-[LLM] Stats Expert / DA Agent interprets results → findings JSON
+[HARDCODED] Switchboard runs each tool instruction in path sequentially → tool_results[]
     ↓
-[LLM] Synthesis Engine updates Living Report
+[LLM] DA Agent interprets tool_results → session_state.da_findings
     ↓
-[USER] Select new path OR proceed to dashboard
+DA findings appended to session_state.analysis_results
     ↓
-[LLM] BI Developer builds Plotly chart configs → rendered in UI
+[USER] Select new path (loop, max 3) OR proceed to DASHBOARD
+    ↓
+[LLM] BI Agent receives all analysis_results → KPI + chart config JSON
+    ↓
+[HARDCODED] Python renders Plotly charts from config → DASHBOARD stage
 ```
+
+---
+
+## Key Files
+
+| File | Role |
+|------|------|
+| `app.py` | Streamlit UI + stage router + session state |
+| `profiler.py` | Hardcoded pandas profiler |
+| `starter_kit.py` | 10 hardcoded pandas analysis functions + TOOL_MAP |
+| `switchboard.py` | Validates + executes tool instructions from Researcher |
+| `pm_agent.py` | PM Agent — gates, transitions, context passing |
+| `de_agent.py` | DE Agent — quality audit |
+| `researcher_agent.py` | Researcher Agent — research path generation |
+| `da_agent.py` | DA Agent — result interpretation |
+| `bi_agent.py` | BI Agent — dashboard KPI + chart config (Stage 11) |
+| `session_state_registry.md` | Full session_state key reference |
 
 ---
 
@@ -71,308 +91,121 @@ CSV Upload (up to 20MB)
 | Decision | Choice |
 |----------|--------|
 | Data processing | Pandas only — LLM never sees raw CSV |
-| CSV sampling | <5k rows: full metadata + head/tail · >5k rows: metadata + 250 first + 250 last + 500 random |
 | LLM output format | Strict JSON — Pydantic validates every response |
 | Orchestration model | Parametric — Python controls flow, LLM triggers named functions |
-| Agent memory | Stateless — PM passes full context explicitly to each call |
-| State persistence | Streamlit session_state — history log, master report, stage router |
-| Cost strategy | GPT-4o mini for utility · Claude Sonnet for synthesis/PM only |
-| Sharing | Streamlit Cloud — free public URL, no auth for MVP |
-| Research path tool execution | 3–5 Starter Kit tools run per research path, sequentially. Researcher Agent returns an ordered list of ToolInstruction objects. Each passes through the Switchboard independently. Results accumulate in a list and are passed together to the DA Agent for interpretation. MVP will be built with single-tool paths first, then expanded to multi-tool lists once the full pipeline is working end to end. |
+| Agent memory | Stateless — full context passed explicitly on every call |
+| State persistence | Streamlit session_state |
+| Research path execution | Tools run sequentially per path. Results accumulate in list → passed together to DA Agent |
+| Multi-path cap | Max 3 research paths per session |
+| Dashboard trigger | User explicitly clicks "GO TO DASHBOARD" after ≥1 completed path |
+| BI Agent input | Receives full `analysis_results[]` — all paths, not per-path |
+| Chart rendering | BI Agent returns Plotly JSON config → `go.Figure(config)` — no LLM code execution |
 
 ---
 
-## Session Process Protocol
+## Session State Keys (summary)
 
-```
-1. Build stage with Claude Code (fast)
-2. Study the code + concepts with chat AI (understand what was built)
-3. Refine if needed
-4. Move to next stage
-```
+| Key | Set by | Contains |
+|-----|--------|----------|
+| `stage` | app.py | Current pipeline stage string |
+| `raw_data` | app.py | Uploaded DataFrame |
+| `metadata` | profiler.py | Full profiler output dict |
+| `de_findings` | de_agent.py | Quality score, issues, outliers |
+| `pm_summary` | pm_agent.py | Latest PM user-facing message |
+| `pm_summaries` | app.py | All PM messages across session (list) |
+| `pm_ready` | pm_agent.py | Bool gate for stage transition |
+| `research_paths` | researcher_agent.py | 5 generated paths |
+| `current_path` | app.py | User-selected path dict |
+| `tool_result` | switchboard.py | Latest tool output dict |
+| `da_findings` | da_agent.py | Interpretation of tool results |
+| `analysis_results` | app.py | Accumulated list of all completed path findings |
+| `chart_configs` | bi_agent.py | Plotly chart config list (Stage 11) |
+| `master_report` | app.py | Living markdown report string |
+| `report_view` | app.py | Active tab in living report panel |
+| `history_logs` | app.py | Timestamped terminal log entries |
 
-**Rule:** Don't move to the next stage until you can explain the current one in plain English.
-
----
-
-## 15-Stage Build Plan
-
-### Phase 1: Foundation (Stages 1–3) ✅ COMPLETE
-
----
-
-#### Stage 1 — Environment & Repo Init ✅
-**What was built:** uv project init, dependencies installed (streamlit, pandas, plotly, anthropic, openai, pydantic), .env for API keys, repo structure.
-
-**Concepts to understand:**
-- `uv` vs pip/conda — why faster, how lockfile works
-- `.env` + `python-dotenv` — why API keys never go in code
-- Project structure: what lives where and why
+> Full schema for each key: see `session_state_registry.md`
 
 ---
 
-#### Stage 2 — Core State Management ✅
-**What was built:** `st.session_state` initialization block — stage router (`START → AUDIT → RESEARCH → ANALYSIS → DASHBOARD`), history_logs list, master_report string, raw_data and metadata holders, `add_log()` helper function.
+## Starter Kit Tools
 
-**Concepts to understand:**
-- Why Streamlit reruns the entire script on every interaction
-- What `session_state` solves — persistence across reruns
-- The stage string as a router — how `if stage == "AUDIT"` controls what renders
-- Why `if "initialized" not in st.session_state` prevents resetting on rerun
+10 hardcoded pandas functions in `starter_kit.py`. Each takes `df` + params, returns a result dict with a `"tool"` key. Registered in `TOOL_MAP` for parametric dispatch via Switchboard.
 
----
-
-#### Stage 3 — Cyberpunk UI Shell ✅
-**What was built:** CSS injection via `st.markdown(unsafe_allow_html=True)`, 3-column layout (`st.columns([1,2,1])`), system logs terminal (col 1), command center with stage-based routing (col 2), living report panel (col 3), footer status bar.
-
-**Concepts to understand:**
-- How Streamlit renders custom CSS via markdown injection
-- `st.columns()` — layout splitting
-- `st.container(height=..., border=True)` — scrollable bounded panels
-- How the log loop renders colored terminal output with f-strings
+| Tool | Params |
+|------|--------|
+| `correlation_matrix` | `columns` (list, optional) |
+| `time_series_trend` | `date_col`, `value_col` |
+| `segment_comparison` | `group_col`, `value_col` |
+| `distribution_analysis` | `col` |
+| `top_n_values` | `col`, `n` (default 10) |
+| `cohort_retention` | `date_col`, `id_col` |
+| `funnel_analysis` | `stage_cols` (list) |
+| `anomaly_detection` | `col` |
+| `cross_tab` | `col1`, `col2` |
+| `rolling_average` | `date_col`, `value_col`, `window` (default 7) |
 
 ---
 
-### Phase 2: The Hardcoded Core (Stages 4–6)
+## Build Plan
+
+### ✅ Complete (Stages 1–10)
+
+| Stage | What was built |
+|-------|---------------|
+| 1 | Environment, uv, repo structure |
+| 2 | Session state, stage router, add_log() |
+| 3 | Cyberpunk UI shell — 3-column layout, terminal, living report |
+| 4 | Pandas profiler → metadata dict |
+| 5 | Starter Kit — 10 analysis functions + TOOL_MAP |
+| 6 | Tool Switchboard — Pydantic validation + parametric dispatch |
+| 7 | PM Agent — gates, transitions, context passing |
+| 8 | DE Agent — quality audit wired to app.py |
+| 9 | Researcher Agent — 5 paths generated + user selection + multi-path loop |
+| 10 | DA Agent — tool results interpreted + findings wired to app.py + multi-path UI |
 
 ---
 
-#### Stage 4 — The Dataset Profiler 🔄 NEXT
-**What to build:** Hardcoded pandas script that extracts everything the LLM needs — no AI involved. Triggered after CSV upload. Populates `st.session_state.metadata`.
-
-**Output dict structure:**
-```python
-{
-  "shape": (rows, cols),
-  "is_sample": bool,
-  "columns": [{"name": ..., "dtype": ..., "null_count": ..., "null_pct": ..., "sample_values": [...]}],
-  "numeric_summary": {col: {"mean": ..., "std": ..., "min": ..., "max": ..., "outliers_zscore": [...], "outliers_iqr": [...]}},
-  "categorical_summary": {col: {"unique_count": ..., "top_values": [...]}},
-  "duplicate_rows": int,
-  "full_row_count": int
-}
-```
-
-**Concepts to understand:**
-- `df.describe()`, `df.dtypes`, `df.isnull().sum()` — pandas profiling basics
-- Z-score outlier detection: `(x - mean) / std > 3`
-- IQR outlier detection: `Q3 + 1.5*IQR` upper fence
-- Why we never send raw CSV to LLM — cost, token limits, privacy
-- Smart sampling logic — why first+last+random is better than just random
+### ⏳ Remaining
 
 ---
 
-#### Stage 5 — The Starter Kit Library ✅
-**What was built:** 10 hardcoded pandas analysis functions in `starter_kit.py`. Each takes a df + optional params and returns a structured result dict with a "tool" key. Functions cover: simple aggregations (top_n_values, distribution_analysis, cross_tab), grouped math (correlation_matrix, segment_comparison, anomaly_detection), and time-based analysis (time_series_trend, rolling_average, cohort_retention, funnel_analysis). TOOL_MAP registry at bottom maps string names to function references for parametric dispatch. distribution_analysis updated to support optional filter_col and filter_val params for subset comparison (e.g. churners vs non-churners).
+#### Stage 11 — BI Developer Agent + Dashboard
+**What to build:** `bi_agent.py` — receives full `analysis_results[]` → returns list of Plotly chart configs + KPI summary as JSON. `app.py` DASHBOARD block wired: renders charts via `go.Figure()` + `st.plotly_chart()`.
 
-**What to build:** 10 modular pandas functions, each takes `df` + optional params, returns a structured result dict. These are the "tools" the DA Agent will trigger by name.
+**Key decisions:**
+- BI Agent sees all completed paths holistically — not called per-path
+- Returns fixed structure: 2–3 chart configs + a KPI summary block
+- Pydantic validates chart type, data arrays, layout title
+- Python renders — LLM never writes Plotly code
 
-**Functions to build:**
-1. `correlation_matrix(df, columns)` — top correlations
-2. `time_series_trend(df, date_col, value_col)` — trend over time
-3. `segment_comparison(df, group_col, value_col)` — group means/counts
-4. `distribution_analysis(df, col)` — histogram bins + skewness
-5. `top_n_values(df, col, n)` — frequency ranking
-6. `cohort_retention(df, date_col, id_col)` — retention matrix
-7. `funnel_analysis(df, stage_cols)` — conversion rates
-8. `anomaly_detection(df, col)` — flag unusual values
-9. `cross_tab(df, col1, col2)` — pivot frequency table
-10. `rolling_average(df, date_col, value_col, window)` — smoothed trend
-
-**Concepts to understand:**
-- Why these are hardcoded, not LLM-generated — deterministic, free, auditable
-- How a function registry works — `TOOL_MAP = {"correlation": correlation_matrix, ...}`
-- Return dict structure — every function returns same shape so UI can render uniformly
+**Done when:** User completes ≥1 path → clicks GO TO DASHBOARD → sees 2–3 rendered Plotly charts.
 
 ---
 
-#### Stage 6 — Tool Switchboard ✅
-**What was built:** `switchboard.py` — validates LLM tool instructions via Pydantic (ToolInstruction model), checks tool exists in TOOL_MAP, executes the matching function with unpacked params. Three error states: invalid_instruction, unknown_tool, execution_failed. Returns result dict or error dict with detail.
+#### Stage 12 — Synthesis Engine (Living Report)
+**What to build:** Synthesis LLM call that rewrites `master_report` after each completed path. Receives all `analysis_results` → outputs coherent markdown narrative. Triggered automatically after DA Agent returns.
 
-**What to build:** Controller that receives a JSON instruction from the DA Agent (`{"tool": "correlation_matrix", "params": {"columns": ["revenue", "churn"]}}`) and maps it to the correct Starter Kit function.
+**Key decisions:**
+- Replaces the full `master_report` on each call — not appended
+- Input: all previous path headlines + insights + caveats
+- Output: structured markdown with exec summary + per-path findings
 
-**Concepts to understand:**
-- Parametric function calling vs agentic tool use — you control the flow
-- Why LLM outputs tool name + params as JSON, Python executes
-- Error handling — what if LLM hallucinates a tool name that doesn't exist
-- Pydantic model for validating the tool instruction before executing
-
----
-
-### Phase 3: Agent Orchestration (Stages 7–10)
+**Done when:** Completing a path auto-updates the REPORT tab with a coherent cross-path narrative.
 
 ---
 
-#### Stage 7 — PM Agent (Concierge) ✅
-**What to build:** The most important agent. Greeting logic, stage gate transitions, context passing. Receives summary of previous stage output and generates the user-facing message + next action options.
+#### Stage 13 — Validation & Error Handling
+**What to build:** Exponential backoff wrapper for all API calls, Pydantic coverage audit across all agents, graceful error display in UI (no raw tracebacks shown to user).
 
-**Concepts to understand:**
-- Why PM is stateless but must carry full history — what gets injected into each call
-- System prompt design for an orchestrator role
-- How to pass structured context without blowing up the context window
-- Gate pattern — PM decides if output is good enough to proceed
+**Done when:** Simulated API failure shows a clean error message, not a crash.
 
 ---
 
-#### Stage 8 — Data Engineer Agent ✅
-**What was built:** LLM call wired to the Anthropic API — receives the pandas profiler output dict as `json.dumps(metadata)` and returns DE findings validated via Pydantic. `app.py` updated with tabbed living report UI and three new session state keys: `pm_summary` (PM's user-facing gate message), `pm_ready` (bool gate flag for stage transitions), and `report_view` (controls which tab is active in the living report panel).
+#### Stage 14 — Deployment
+**What to build:** Streamlit Cloud deploy, secrets management (no .env in cloud), README for portfolio.
 
-**What to build:** LLM call that receives the pandas profiler output dict (Stage 4) and returns the finalized quality JSON. Prompt already written — wire it to the API with Pydantic validation.
-
-**Prompt status:** ✅ FINALIZED (see Prompt Library below)
-
-**Concepts to understand:**
-- How to pass a Python dict as LLM context — `json.dumps(metadata)`
-- Pydantic model matching the DE output schema
-- Retry logic — what happens if LLM returns malformed JSON
-
----
-
-#### Stage 9 — Researcher Agent ✅
-**What was built:** Researcher Agent fully wired — generates exactly 5 answerable research paths as JSON (validated via Pydantic), each with an ordered list of ToolInstruction objects. Key decisions: (1) stretch_questions field scoped out for now — unanswerable paths deferred to a future iteration; (2) PM system prompt updated at the RESEARCH gate to write path title + research question + tool overview into user_message, propagating automatically to the living report — no app.py or context builder changes required.
-
-**What to build:** Receives profiler output + DE findings → generates exactly 5 answerable business research paths as JSON. User selects one path → triggers Stage 6 tool switchboard.
-
-**Concepts to understand:**
-- What makes a research question "answerable" with the available data
-- How to constrain LLM output to exactly N items with Pydantic
-- Rendering clickable path options in Streamlit
-
----
-
-#### Stage 10 — DA / Stats Agent ⏳
-**What to build:** Receives selected research path + Starter Kit output → interprets results → returns findings JSON with insight, supporting stats, and recommended visualization type.
-
-**Concepts to understand:**
-- How to chain: user selection → tool call → LLM interpretation
-- Why DA agent never does math — it only interprets what pandas returned
-- Findings JSON schema design
-
----
-
-### Phase 4: Synthesis & Visualization (Stages 11–13)
-
----
-
-#### Stage 11 — BI Developer Agent ⏳
-**What to build:** Receives DA findings + visualization recommendation → returns Plotly chart config as JSON → Python renders it.
-
-**Concepts to understand:**
-- Plotly chart config structure — why JSON → chart is cleaner than LLM writing Plotly code
-- Chart type selection logic — when bar vs line vs scatter vs heatmap
-- How to render Plotly in Streamlit (`st.plotly_chart()`)
-
----
-
-#### Stage 12 — Synthesis Engine (Living Report) ⏳
-**What to build:** "Lead Editor" LLM call that rewrites the master report after each research path. Receives all previous path summaries + new findings → outputs updated markdown report.
-
-**Concepts to understand:**
-- Iterative report synthesis — how to append without losing context
-- Token management — summarize old paths before passing to new call
-- Why the report lives in `session_state.master_report`
-
----
-
-#### Stage 13 — Iterative Research Loop ⏳
-**What to build:** "New Path" button logic — user can run multiple research paths without losing previous findings. Loop control in session_state.
-
-**Concepts to understand:**
-- State machine pattern — how stage transitions work in a loop
-- Appending to `analysis_results` list in session_state
-- UI for showing previous paths + current path simultaneously
-
----
-
-### Phase 5: Polish & Deploy (Stages 14–15)
-
----
-
-#### Stage 14 — Validation & Error Handling ⏳
-**What to build:** Pydantic models for all LLM outputs, exponential backoff wrapper for API calls, graceful error display in UI.
-
-**Concepts to understand:**
-- Exponential backoff — why and how (tenacity library or manual)
-- Pydantic v2 model_validate vs model_json
-- User-facing error messages vs internal logs
-
----
-
-#### Stage 15 — Deployment ⏳
-**What to build:** Streamlit Cloud deployment, secrets management (no .env in cloud), README for portfolio, LinkedIn post draft.
-
-**Concepts to understand:**
-- Streamlit Cloud secrets — how they replace .env
-- `requirements.txt` vs `pyproject.toml` for deployment
-- Portfolio framing: business problem first, not stack first
-
----
-
-## Prompt Library
-
-### ✅ Agent 2: Data Engineer (FINALIZED)
-
-```
-You are a senior data engineer reviewing a dataset for analysis readiness.
-
-When the user uploads CSV data, analyze it and respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks. Just the raw JSON.
-
-Use exactly this structure:
-
-{
-  "quality_score": <number 1-10>,
-  "quality_score_reason": "<one sentence>",
-  "dataset_summary": {
-    "total_rows": <number>,
-    "total_columns": <number>,
-    "is_sample": <true or false>
-  },
-  "columns": [
-    {
-      "name": "<column name>",
-      "type": "<Number / String / Boolean / Date>",
-      "sample_value": "<one example value>"
-    }
-  ],
-  "quality_issues": [
-    {
-      "issue": "<issue name>",
-      "detail": "<plain English explanation>",
-      "affected_column": "<column name or 'all'>"
-    }
-  ],
-  "outliers": [
-    {
-      "column": "<column name>",
-      "value": "<the suspicious value>",
-      "reason": "<why it's flagged — Z-score, IQR, or logically impossible>"
-    }
-  ]
-}
-
-Rules:
-- If no quality issues exist, return an empty array: "quality_issues": []
-- If no outliers exist, return an empty array: "outliers": []
-- Use plain language in all explanation fields
-- Never add text outside the JSON object
-- is_sample is true if the user indicates this is a sample, false if full dataset
-```
-
-### 🔄 Agent 4: Researcher — NOT STARTED
-### 🔄 Agent 3: Stats Expert / DA — NOT STARTED
-### 🔄 Agent 1: PM Agent — NOT STARTED
-### 🔄 Agent 5: BI Developer — NOT STARTED
-
----
-
-## Current Status
-
-**Active stage:** Stage 10 — DA / Stats Agent
-**Stages complete:** 1, 2, 3, 4, 5, 6, 7, 8, 9
-**Stages remaining:** 4–15
-**Deployment target:** Streamlit Cloud (free, shareable URL)
-**Build environment:** VS Code + Claude Code
-**Study environment:** Claude.ai chat / Gemini
+**Done when:** Public URL works end-to-end with a real CSV.
 
 ---
 
@@ -380,8 +213,7 @@ Rules:
 
 - **Pandas does the counting, AI does the thinking** — LLM never sees raw CSV
 - **Prompts ARE the intelligence** — the app is just plumbing
-- **PM Agent is the most critical** — it holds context across all stateless agent calls
+- **PM Agent is the most critical** — holds context across all stateless agent calls
 - **Parametric over agentic** — Python controls flow, LLM triggers named functions
-- **MVP = ship the core loop first** — resist features until Stages 1–13 work end-to-end
 - **Own every number** — if pandas produced it, you can verify it; if LLM produced it, validate with Pydantic
 - **Slow is smooth, smooth is fast** — understand each stage before building the next
