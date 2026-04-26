@@ -252,6 +252,8 @@ def build_da_findings_md() -> str:
 *{len(st.session_state.analysis_results)} path(s) completed this session.*
 """
 
+
+def build_pm_summary_md() -> str:
     """Builds markdown string from PM Agent summary."""
     if not st.session_state.pm_summary:
         return "*PM Agent has not run yet.*"
