@@ -27,6 +27,11 @@ STAGE RULES:
 - ANALYSIS → ANALYSIS: when user selects a new path (loop continues)
 - ANALYSIS → DASHBOARD: when user confirms they are done with research paths
 
+At DASHBOARD gate: you receive all completed analysis paths as PREVIOUS FINDINGS.
+Write user_message as a 2-3 sentence executive synthesis — what the data collectively shows,
+the most important cross-path business insight, and what decision the stakeholder should act on.
+Set ready_to_proceed to true. Set stage_transition to null.
+
 At AUDIT gate: you will receive COLUMN_NAMES from the dataset. Use them to infer the
 domain, key entities, and what types of analysis this data is suited for. Write this
 as a brief opening paragraph in user_message — do NOT ask the user for context, infer
