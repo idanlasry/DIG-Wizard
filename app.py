@@ -132,6 +132,7 @@ if "initialized" not in st.session_state:
     st.session_state.analysis_results = []
     st.session_state.pm_summaries = []      # accumulates all PM user_messages
     st.session_state.research_paths = None
+    st.session_state.primary_metric = None
     st.session_state.tool_result = None
     st.session_state.da_findings = None
     st.session_state.chart_configs = None
@@ -182,19 +183,27 @@ def build_html_report(
     total_cols = metadata["shape"]["cols"]
     duplicate_rows = metadata["duplicate_rows"]
     quality_score = de_findings.get("quality_score", "N/A")
-    pm = st.session_state.research_paths.get("primary_metric")
-    primary_label = pm["label"] if pm else "Primary Metric"
-    primary_value = f"{pm['rate_pct']:.1f}%" if pm else "N/A"
+    pm = st.session_state.get("primary_metric")
+    if pm is None:
+        # Fallback: detect binary column (min=0, max=1) from metadata
+        num_summary = metadata.get("numeric_summary", {})
+        for col, stats in num_summary.items():
+            if stats.get("min") == 0 and stats.get("max") == 1:
+                rate = stats.get("mean", 0) * 100
+                pm = {"label": col.replace("_", " ").title(), "column": col, "rate_pct": rate}
+                break
+    snapshot_items = [
+        ("Total Rows", f"{total_customers:,}"),
+        ("Features", total_cols),
+        ("Duplicate Rows", duplicate_rows),
+        ("Data Quality Score", quality_score),
+    ]
+    if pm:
+        snapshot_items.insert(2, (pm["label"], f"{pm['rate_pct']:.1f}%"))
 
     snapshot_cards = "".join(
         f"<div class='snapshot-card'><div class='label'>{label}</div><div class='val'>{value}</div></div>"
-        for label, value in [
-            ("Total Rows", f"{total_customers:,}"),
-            ("Features", total_cols),
-            (primary_label, primary_value),
-            ("Duplicate Rows", duplicate_rows),
-            ("Data Quality Score", quality_score),
-        ]
+        for label, value in snapshot_items
     )
 
     chart_blocks = []
@@ -576,7 +585,13 @@ with col_main:
                         st.error("⚠️ Researcher Agent failed. Try again or check system logs.")
                     else:
                         st.session_state.research_paths = result["paths"]
+                        pm_result = result.get("primary_metric")
+                        st.session_state.primary_metric = pm_result
                         add_log(f"RESEARCHER: {len(result['paths'])} paths generated.", "system")
+                        if pm_result:
+                            add_log(f"RESEARCHER: Primary metric detected — {pm_result['label']} ({pm_result['column']}) at {pm_result['rate_pct']:.1f}%", "system")
+                        else:
+                            add_log("RESEARCHER: No primary metric detected (no binary column found).", "system")
                         st.session_state.stage = "RESEARCH"
                         st.rerun()
             else:
