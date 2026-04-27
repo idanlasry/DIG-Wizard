@@ -2,6 +2,8 @@
 import json
 from anthropic import Anthropic
 from pydantic import BaseModel, ValidationError, field_validator
+import streamlit as st
+from utils.utils import calculate_cost
 
 client = Anthropic()
 
@@ -94,6 +96,13 @@ def call_synthesis_agent(analysis_results: list[dict], bi_findings: dict) -> dic
         max_tokens=1000,
         system=SYNTHESIS_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context}],
+    )
+    st.session_state.total_input_tokens += response.usage.input_tokens
+    st.session_state.total_output_tokens += response.usage.output_tokens
+    st.session_state.estimated_cost_usd += calculate_cost(
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        model="claude-haiku-4-5-20251001",
     )
     raw_text = (
         response.content[0]

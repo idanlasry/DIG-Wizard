@@ -2,6 +2,8 @@
 import json
 from anthropic import Anthropic
 from pydantic import BaseModel, ValidationError, field_validator
+import streamlit as st
+from utils.utils import with_backoff, calculate_cost
 
 client = Anthropic()
 
@@ -148,11 +150,19 @@ def call_da_agent(current_path: dict, tool_results: list[dict]) -> dict:
     """
     context = build_da_context(current_path, tool_results)
 
-    response = client.messages.create(
+    response = with_backoff(
+        client.messages.create,
         model="claude-haiku-4-5-20251001",
         max_tokens=2000,
         system=DA_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context}],
+    )
+    st.session_state.total_input_tokens += response.usage.input_tokens
+    st.session_state.total_output_tokens += response.usage.output_tokens
+    st.session_state.estimated_cost_usd += calculate_cost(
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        model="claude-haiku-4-5-20251001",
     )
 
     raw_text = (

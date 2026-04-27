@@ -2,15 +2,19 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
-from profiler import get_dataset_profile
-from pm_agent import run_pm_gate
-from de_agent import run_de_agent
-from researcher_agent import run_researcher_agent
-from da_agent import run_da_agent
-from switchboard import run_tool
-from bi_agent import run_bi_agent
-from synthesis_agent import run_synthesis_agent
+from core.profiler import get_dataset_profile
+from core.switchboard import run_tool
+from agents.pm_agent import run_pm_gate
+from agents.de_agent import run_de_agent
+from agents.researcher_agent import run_researcher_agent
+from agents.da_agent import run_da_agent
+from agents.bi_agent import run_bi_agent
+from agents.synthesis_agent import run_synthesis_agent
 import plotly.graph_objects as go
+import os
+
+if "ANTHROPIC_API_KEY" not in os.environ:
+    os.environ["ANTHROPIC_API_KEY"] = st.secrets.get("ANTHROPIC_API_KEY", "")
 
 
 # ==========================================
@@ -111,6 +115,7 @@ if "initialized" not in st.session_state:
     st.session_state.raw_data = None
     st.session_state.metadata = None
     st.session_state.de_findings = None
+    st.session_state.de_running = False
     st.session_state.pm_ready = False  # PM ready_to_proceed flag
     st.session_state.report_view = "metadata"  # Active tab in living report
     st.session_state.history_logs = [
@@ -132,6 +137,17 @@ if "initialized" not in st.session_state:
     st.session_state.chart_configs = None
     st.session_state.synthesis = None
     st.session_state.pm_final_summary = None
+    st.session_state.api_call_count = 0
+    st.session_state.total_input_tokens = 0
+    st.session_state.total_output_tokens = 0
+    st.session_state.estimated_cost_usd = 0.0
+
+print(
+    f"[RERUN] Stage: {st.session_state.stage} | "
+    f"API calls: {st.session_state.api_call_count} | "
+    f"Tokens in/out: {st.session_state.total_input_tokens}/{st.session_state.total_output_tokens} | "
+    f"Est. cost: ${st.session_state.estimated_cost_usd:.4f}"
+)
 
 
 def add_log(msg, log_type="info"):
@@ -166,17 +182,16 @@ def build_html_report(
     total_cols = metadata["shape"]["cols"]
     duplicate_rows = metadata["duplicate_rows"]
     quality_score = de_findings.get("quality_score", "N/A")
-    try:
-        churn_rate = f"{metadata['numeric_summary']['Exited']['mean'] * 100:.1f}%"
-    except (KeyError, TypeError):
-        churn_rate = "N/A"
+    pm = st.session_state.research_paths.get("primary_metric")
+    primary_label = pm["label"] if pm else "Primary Metric"
+    primary_value = f"{pm['rate_pct']:.1f}%" if pm else "N/A"
 
     snapshot_cards = "".join(
         f"<div class='snapshot-card'><div class='label'>{label}</div><div class='val'>{value}</div></div>"
         for label, value in [
-            ("Total Customers", f"{total_customers:,}"),
+            ("Total Rows", f"{total_customers:,}"),
             ("Features", total_cols),
-            ("Churn Rate", churn_rate),
+            (primary_label, primary_value),
             ("Duplicate Rows", duplicate_rows),
             ("Data Quality Score", quality_score),
         ]
@@ -415,6 +430,20 @@ with col_main:
     # ── STAGE: START ───────────────────────────────────────────────────
     if st.session_state.stage == "START":
         st.markdown("##### 📥 STEP_01: DATA_INTAKE")
+
+        if st.button("🏦 USE BANK DEMO DATA", help="Load the Bank Churn sample dataset"):
+            try:
+                df = pd.read_csv("practice_data/Bank_Churn.csv")
+                st.session_state.raw_data = df
+                st.session_state.stage = "AUDIT"
+                st.session_state.report_view = "metadata"
+                add_log(f"DEMO_DATA_LOADED: Bank_Churn — {len(df)} rows, {len(df.columns)} columns.", "system")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error loading demo data: {e}")
+                add_log(f"ERROR: Failed to read demo CSV. {e}", "error")
+
+        st.markdown("— or —")
         uploaded_file = st.file_uploader("UPLOAD_CSV_FILE", type="csv")
 
         if uploaded_file is not None:
@@ -440,67 +469,79 @@ with col_main:
 
         # Only show DE button if DE hasn't run yet
         if st.session_state.de_findings is None:
-            if st.button("⚡ INITIALIZE_DE_AGENT"):
-                add_log("PROFILER: Starting hardcoded scan...", "system")
-                try:
-                    profile = get_dataset_profile(df)
-                    st.session_state.metadata = profile
+            if st.session_state.de_running:
+                st.button("⚡ INITIALIZE_DE_AGENT", disabled=True)
+                with st.spinner("DE Agent running..."):
+                    add_log("PROFILER: Starting hardcoded scan...", "system")
+                    try:
+                        profile = get_dataset_profile(df)
+                        st.session_state.metadata = profile
 
-                    rows = profile["shape"]["rows"]
-                    cols_count = profile["shape"]["cols"]
-                    dupes = profile["duplicate_rows"]
-                    num_count = len(profile["numeric_summary"])
-                    cat_count = len(profile["categorical_summary"])
+                        rows = profile["shape"]["rows"]
+                        cols_count = profile["shape"]["cols"]
+                        dupes = profile["duplicate_rows"]
+                        num_count = len(profile["numeric_summary"])
+                        cat_count = len(profile["categorical_summary"])
 
-                    add_log(
-                        f"PROFILER: Scan complete. {rows}R × {cols_count}C.", "system"
-                    )
-                    add_log(
-                        f"PROFILER: {num_count} numeric, {cat_count} categorical cols."
-                    )
-                    add_log(f"PROFILER: {dupes} duplicate rows found.")
-
-                    # ── DE AGENT ──────────────────────────────────────
-                    add_log("DE_AGENT: Calling DE Agent...", "system")
-                    de_response = run_de_agent(profile)
-
-                    if "error" in de_response:
-                        add_log(f"DE_ERROR: {de_response['detail']}", "error")
-                        st.error(f"DE Agent failed: {de_response['detail']}")
-                    else:
-                        st.session_state.de_findings = de_response
-                        st.session_state.report_view = "de_report"
                         add_log(
-                            f"DE_AGENT: Quality score {de_response['quality_score']}/10.",
-                            "system",
+                            f"PROFILER: Scan complete. {rows}R × {cols_count}C.", "system"
                         )
                         add_log(
-                            f"DE_AGENT: {len(de_response['quality_issues'])} issue(s), {len(de_response['outliers'])} outlier(s)."
+                            f"PROFILER: {num_count} numeric, {cat_count} categorical cols."
                         )
+                        add_log(f"PROFILER: {dupes} duplicate rows found.")
 
-                        # ── PM GATE ────────────────────────────────────
-                        add_log("PM_GATE: Calling PM Agent at AUDIT...", "system")
-                        pm_response = run_pm_gate(
-                            current_stage="AUDIT",
-                            metadata=profile,
-                            de_findings=st.session_state.de_findings,
-                        )
+                        # ── DE AGENT ──────────────────────────────────────
+                        add_log("DE_AGENT: Calling DE Agent...", "system")
+                        st.session_state.api_call_count += 1
+                        de_response = run_de_agent(profile)
 
-                        if "error" in pm_response:
-                            add_log(f"PM_ERROR: {pm_response['detail']}", "error")
-                            st.error(f"PM Agent failed: {pm_response['detail']}")
+                        if "error" in de_response:
+                            add_log(f"DE_ERROR: {de_response['detail']}", "error")
+                            print(f"[ERROR] DE Agent: {de_response['detail']}")
+                            st.session_state.de_running = False
+                            st.error("⚠️ DE Agent failed. Try again or check system logs.")
                         else:
-                            add_log(f"PM: {pm_response['summary_for_log']}", "system")
-                            st.session_state.pm_summaries.append(pm_response["user_message"])
-                            st.session_state.pm_ready = pm_response.get(
-                                "ready_to_proceed", False
+                            st.session_state.de_findings = de_response
+                            st.session_state.report_view = "de_report"
+                            add_log(
+                                f"DE_AGENT: Quality score {de_response['quality_score']}/10.",
+                                "system",
                             )
-                            st.session_state.report_view = "pm_summary"
-                            st.rerun()
+                            add_log(
+                                f"DE_AGENT: {len(de_response['quality_issues'])} issue(s), {len(de_response['outliers'])} outlier(s)."
+                            )
 
-                except Exception as e:
-                    add_log(f"ERROR: Profiler failed — {e}", "error")
-                    st.error(f"Profiler error: {e}")
+                            # ── PM GATE ────────────────────────────────────
+                            add_log("PM_GATE: Calling PM Agent at AUDIT...", "system")
+                            st.session_state.api_call_count += 1
+                            pm_response = run_pm_gate(
+                                current_stage="AUDIT",
+                                metadata=profile,
+                                de_findings=st.session_state.de_findings,
+                            )
+
+                            if "error" in pm_response:
+                                add_log(f"PM_ERROR: {pm_response['detail']}", "error")
+                                print(f"[ERROR] PM Agent: {pm_response['detail']}")
+                                st.session_state.de_running = False
+                                st.error("⚠️ PM Agent failed. Try again or check system logs.")
+                            else:
+                                add_log(f"PM: {pm_response['summary_for_log']}", "system")
+                                st.session_state.pm_summaries.append(pm_response["user_message"])
+                                st.session_state.pm_ready = pm_response.get(
+                                    "ready_to_proceed", False
+                                )
+                                st.session_state.report_view = "pm_summary"
+                                st.session_state.de_running = False
+                                st.rerun()
+
+                    except Exception as e:
+                        st.session_state.de_running = False
+                        add_log(f"ERROR: Profiler failed — {e}", "error")
+            elif st.button("⚡ INITIALIZE_DE_AGENT"):
+                st.session_state.de_running = True
+                st.rerun()
 
         # DE has already run — show results + actions
         else:
@@ -523,8 +564,21 @@ with col_main:
 
             if st.session_state.pm_ready:
                 if st.button("🚀 PROCEED_TO_RESEARCH"):
-                    st.session_state.stage = "RESEARCH"
-                    st.rerun()
+                    add_log("RESEARCHER: Generating research paths...", "system")
+                    st.session_state.api_call_count += 1
+                    result = run_researcher_agent(
+                        metadata=st.session_state.metadata,
+                        de_findings=st.session_state.de_findings,
+                    )
+                    if "error" in result:
+                        add_log(f"RESEARCHER_ERROR: {result['detail']}", "error")
+                        print(f"[ERROR] Researcher Agent: {result['detail']}")
+                        st.error("⚠️ Researcher Agent failed. Try again or check system logs.")
+                    else:
+                        st.session_state.research_paths = result["paths"]
+                        add_log(f"RESEARCHER: {len(result['paths'])} paths generated.", "system")
+                        st.session_state.stage = "RESEARCH"
+                        st.rerun()
             else:
                 st.warning(
                     "⚠️ Quality score too low to proceed. Review DE report before continuing."
@@ -534,64 +588,69 @@ with col_main:
     elif st.session_state.stage == "RESEARCH":
         st.markdown("##### 🔬 STEP_03: RESEARCH_PATHS")
 
-        # ── GENERATE PATHS (first visit) ──────────────────────────────────
-        if st.session_state.research_paths is None:
-            if st.button("⚡ GENERATE_RESEARCH_PATHS"):
-                add_log("RESEARCHER: Generating research paths...", "system")
-                result = run_researcher_agent(
-                    metadata=st.session_state.metadata,
-                    de_findings=st.session_state.de_findings,
-                )
-
-                if "error" in result:
-                    add_log(f"RESEARCHER_ERROR: {result['detail']}", "error")
-                    st.error(f"Researcher Agent failed: {result['detail']}")
-                else:
-                    st.session_state.research_paths = result["paths"]
-                    add_log(
-                        f"RESEARCHER: {len(result['paths'])} paths generated.", "system"
-                    )
-                    st.rerun()
-
         # ── PATH SELECTION UI ─────────────────────────────────────────────
-        else:
-            paths = st.session_state.research_paths
-            st.markdown("**Select a research path to analyze:**")
+        paths = st.session_state.research_paths
+        st.markdown("**Select a research path to analyze:**")
 
-            for i, path in enumerate(paths):
-                with st.container(border=True):
-                    st.markdown(f"**{i + 1}. {path['title']}**")
-                    st.caption(path["question"])
-                    tool_names = " → ".join(
-                        t["tool"] for t in path["tool_instructions"]
-                    )
+        used_titles = {
+            r["path"]["title"]
+            for r in st.session_state.get("analysis_results", [])
+        }
+
+        for i, path in enumerate(paths):
+            already_used = path["title"] in used_titles
+            with st.container(border=True):
+                if already_used:
                     st.markdown(
-                        f"<span style='color:#888; font-size:0.8rem; font-family:monospace'>"
-                        f"TOOLS: {tool_names}</span>",
+                        "<div style='opacity:0.35; filter:blur(1.5px); pointer-events:none;'>",
                         unsafe_allow_html=True,
                     )
-                    if st.button(f"▶ SELECT PATH {i + 1}", key=f"path_{i}"):
-                        st.session_state.current_path = path
-                        add_log(f"PATH_SELECTED: {path['title']}", "system")
+                st.markdown(f"**{i + 1}. {path['title']}**")
+                st.caption(path["question"])
+                tool_names = " → ".join(
+                    t["tool"] for t in path["tool_instructions"]
+                )
+                st.markdown(
+                    f"<span style='color:#888; font-size:0.8rem; font-family:monospace'>"
+                    f"TOOLS: {tool_names}</span>",
+                    unsafe_allow_html=True,
+                )
+                if already_used:
+                    st.markdown("</div>", unsafe_allow_html=True)
+                if st.button(f"▶ SELECT PATH {i + 1}", key=f"path_{i}", disabled=already_used):
+                    st.session_state.current_path = path
+                    add_log(f"PATH_SELECTED: {path['title']}", "system")
 
-                        # PM gates transition to ANALYSIS
-                        pm_response = run_pm_gate(
-                            current_stage="RESEARCH",
-                            metadata=st.session_state.metadata,
-                            de_findings=st.session_state.de_findings,
-                            selected_path=path,
-                            previous_findings=st.session_state.analysis_results or None,
-                        )
+                    # PM gates transition to ANALYSIS
+                    st.session_state.api_call_count += 1
+                    pm_response = run_pm_gate(
+                        current_stage="RESEARCH",
+                        metadata=st.session_state.metadata,
+                        de_findings=st.session_state.de_findings,
+                        selected_path=path,
+                        previous_findings=st.session_state.analysis_results or None,
+                    )
 
-                        if "error" in pm_response:
-                            add_log(f"PM_ERROR: {pm_response['detail']}", "error")
-                            st.error(f"PM gate failed: {pm_response['detail']}")
-                        else:
-                            add_log(f"PM: {pm_response['summary_for_log']}", "system")
-                            st.session_state.pm_summaries.append(pm_response["user_message"])
-                            st.session_state.stage = "ANALYSIS"
-                            st.session_state.report_view = "pm_summary"
-                            st.rerun()
+                    if "error" in pm_response:
+                        add_log(f"PM_ERROR: {pm_response['detail']}", "error")
+                        print(f"[ERROR] PM Agent: {pm_response['detail']}")
+                        st.error("⚠️ PM Agent failed. Try again or check system logs.")
+                    else:
+                        add_log(f"PM: {pm_response['summary_for_log']}", "system")
+                        st.session_state.pm_summaries.append(pm_response["user_message"])
+                        st.session_state.stage = "ANALYSIS"
+                        st.session_state.report_view = "pm_summary"
+                        st.rerun()
+
+        if len(st.session_state.get("analysis_results", [])) >= 1:
+            st.markdown("---")
+            n = len(st.session_state.analysis_results)
+            label = "path" if n == 1 else "paths"
+            st.caption(f"You've already analysed {n} {label}.")
+            if st.button("⏭ Regret — proceed to dashboard with current findings", key="regret_to_dashboard"):
+                st.session_state.stage = "DASHBOARD"
+                st.rerun()
+
     # ── STAGE: ANALYSIS ────────────────────────────────────────────────
     elif st.session_state.stage == "ANALYSIS":
         st.markdown("##### 📊 STEP_04: ANALYSIS")
@@ -620,7 +679,8 @@ with col_main:
                             add_log(
                                 f"TOOL_ERROR [{tool_name}]: {result['detail']}", "error"
                             )
-                            st.error(f"Tool failed: {tool_name} — {result['detail']}")
+                            print(f"[ERROR] Tool {tool_name}: {result['detail']}")
+                            st.error(f"⚠️ Tool {tool_name} failed. Try again or check system logs.")
                             all_ok = False
                             break
 
@@ -632,11 +692,13 @@ with col_main:
 
                         # DA Agent interprets all results
                         add_log("DA_AGENT: Interpreting results...", "system")
+                        st.session_state.api_call_count += 1
                         da_response = run_da_agent(path, tool_results)
 
                         if "error" in da_response:
                             add_log(f"DA_ERROR: {da_response['detail']}", "error")
-                            st.error(f"DA Agent failed: {da_response['detail']}")
+                            print(f"[ERROR] DA Agent: {da_response['detail']}")
+                            st.error("⚠️ DA Agent failed. Try again or check system logs.")
                         else:
                             st.session_state.da_findings = da_response
                             add_log(f"DA_AGENT: Analysis complete.", "system")
@@ -705,6 +767,7 @@ with col_main:
         # ── PHASE A: PM FINAL SYNTHESIS ───────────────────────────────
         if st.session_state.pm_final_summary is None:
             with st.spinner("PM_AGENT: Synthesizing all findings..."):
+                st.session_state.api_call_count += 1
                 pm_response = run_pm_gate(
                     current_stage="DASHBOARD",
                     metadata=st.session_state.metadata,
@@ -713,7 +776,8 @@ with col_main:
                 )
             if "error" in pm_response:
                 add_log(f"PM_ERROR: {pm_response['detail']}", "error")
-                st.error(f"PM synthesis failed: {pm_response['detail']}")
+                print(f"[ERROR] PM Agent: {pm_response['detail']}")
+                st.error("⚠️ PM Agent failed. Try again or check system logs.")
             else:
                 st.session_state.pm_final_summary = pm_response["user_message"]
                 st.session_state.pm_summaries.append(pm_response["user_message"])
@@ -723,13 +787,15 @@ with col_main:
         # ── PHASE B: BI AGENT ─────────────────────────────────────────
         elif st.session_state.chart_configs is None:
             with st.spinner("BI_AGENT: Building dashboard config..."):
+                st.session_state.api_call_count += 1
                 bi_response = run_bi_agent(
                     st.session_state.analysis_results,
                     st.session_state.pm_final_summary,
                 )
             if "error" in bi_response:
                 add_log(f"BI_ERROR: {bi_response['detail']}", "error")
-                st.error(f"BI Agent failed: {bi_response['detail']}")
+                print(f"[ERROR] BI Agent: {bi_response['detail']}")
+                st.error("⚠️ BI Agent failed. Try again or check system logs.")
             else:
                 st.session_state.chart_configs = bi_response
                 add_log("BI_AGENT: Dashboard config generated.", "system")
@@ -738,13 +804,15 @@ with col_main:
         # ── PHASE D: SYNTHESIS AGENT ──────────────────────────────────
         elif st.session_state.synthesis is None:
             with st.spinner("SYNTHESIS_AGENT: Generating recommendations..."):
+                st.session_state.api_call_count += 1
                 syn_response = run_synthesis_agent(
                     st.session_state.analysis_results,
                     st.session_state.chart_configs,
                 )
             if "error" in syn_response:
                 add_log(f"SYN_ERROR: {syn_response['detail']}", "error")
-                st.error(f"Synthesis Agent failed: {syn_response['detail']}")
+                print(f"[ERROR] Synthesis Agent: {syn_response['detail']}")
+                st.error("⚠️ Synthesis Agent failed. Try again or check system logs.")
             else:
                 st.session_state.synthesis = syn_response
                 add_log("SYNTHESIS_AGENT: Recommendations generated.", "system")
@@ -886,10 +954,11 @@ with col_report:
 # 7. FOOTER / SYSTEM STATUS
 # ==========================================
 st.divider()
-status_cols = st.columns(4)
+status_cols = st.columns(5)
 status_cols[0].caption(f"STAGE: {st.session_state.stage}")
 status_cols[1].caption(f"VIEW: {st.session_state.report_view}")
 status_cols[2].caption(
     f"ROWS: {len(st.session_state.raw_data) if st.session_state.raw_data is not None else 0}"
 )
 status_cols[3].caption("MODEL: CLAUDE-HAIKU-4")
+status_cols[4].caption(f"COST: ${st.session_state.estimated_cost_usd:.4f}")

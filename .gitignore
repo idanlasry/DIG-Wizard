@@ -9,3 +9,4 @@ wheels/
 # Virtual environments
 .venv
 .env
+insurance_leads_training.csv

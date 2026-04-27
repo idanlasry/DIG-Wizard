@@ -1,10 +1,25 @@
 # pm_agent.py
-import os
 import json
-from urllib import response
 from anthropic import Anthropic
+from pydantic import BaseModel, ValidationError, field_validator
+import streamlit as st
+from utils.utils import with_backoff, calculate_cost
 
 client = Anthropic()
+
+
+class PMResponse(BaseModel):
+    user_message: str
+    stage_transition: str | None
+    ready_to_proceed: bool
+    summary_for_log: str
+
+    @field_validator("ready_to_proceed", mode="before")
+    @classmethod
+    def coerce_bool(cls, v):
+        if isinstance(v, str):
+            return v.strip().lower() == "true"
+        return v
 
 # ══════════════════════════════════════════════════════════════════════
 # BLOCK 1 — SYSTEM PROMPT
@@ -150,11 +165,19 @@ def call_pm_agent(context_message: str) -> dict:
     Raises ValueError if JSON is malformed.
     Raises Exception for API failures.
     """
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",  #! change to laude-sonnet-4-20250514 once mvp is done
+    response = with_backoff(
+        client.messages.create,
+        model="claude-haiku-4-5-20251001",  #! change to claude-sonnet-4-20250514 once mvp is done
         max_tokens=1000,
         system=PM_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context_message}],
+    )
+    st.session_state.total_input_tokens += response.usage.input_tokens
+    st.session_state.total_output_tokens += response.usage.output_tokens
+    st.session_state.estimated_cost_usd += calculate_cost(
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        model="claude-haiku-4-5-20251001",
     )
 
     raw_text = (
@@ -177,14 +200,6 @@ def call_pm_agent(context_message: str) -> dict:
 # Builds context, calls PM, validates response shape, returns clean dict.
 # This is the only function app.py needs to import.
 # ══════════════════════════════════════════════════════════════════════
-
-REQUIRED_KEYS = {
-    "user_message",
-    "stage_transition",
-    "ready_to_proceed",
-    "summary_for_log",
-}
-
 
 def run_pm_gate(
     current_stage: str,
@@ -212,14 +227,10 @@ def run_pm_gate(
         )
         response = call_pm_agent(context)
 
-        # Validate required keys are present
-        missing = REQUIRED_KEYS - response.keys()
-        if missing:
-            return {
-                "error": "incomplete_response",
-                "detail": f"PM Agent missing keys: {missing}",
-                "raw": response,
-            }
+        try:
+            PMResponse(**response)
+        except ValidationError as e:
+            return {"error": "validation_failed", "detail": str(e)}
 
         return response
 

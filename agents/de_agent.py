@@ -2,6 +2,8 @@
 import json
 from anthropic import Anthropic
 from pydantic import BaseModel, ValidationError
+import streamlit as st
+from utils.utils import with_backoff, calculate_cost
 
 client = Anthropic()
 
@@ -117,11 +119,19 @@ def call_de_agent(metadata: dict) -> dict:
         f"Analyze this and return your quality assessment JSON."
     )
 
-    response = client.messages.create(
+    response = with_backoff(
+        client.messages.create,
         model="claude-haiku-4-5-20251001",
         max_tokens=2000,
         system=DE_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context}],
+    )
+    st.session_state.total_input_tokens += response.usage.input_tokens
+    st.session_state.total_output_tokens += response.usage.output_tokens
+    st.session_state.estimated_cost_usd += calculate_cost(
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        model="claude-haiku-4-5-20251001",
     )
 
     raw_text = (

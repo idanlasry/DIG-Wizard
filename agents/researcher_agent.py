@@ -2,6 +2,8 @@
 import json
 from anthropic import Anthropic
 from pydantic import BaseModel, ValidationError, field_validator
+import streamlit as st
+from utils.utils import with_backoff, calculate_cost
 
 client = Anthropic()
 
@@ -16,7 +18,7 @@ RESEARCHER_SYSTEM_PROMPT = """
 You are a senior data analyst specializing in exploratory research planning.
 
 Your job: given a dataset profile and quality findings, generate exactly 5 high-value,
-answerable business research paths.
+answerable business research paths. Also identify the dataset's primary outcome metric.
 
 Each path must:
 - Address a real business question answerable with the available columns
@@ -25,11 +27,21 @@ Each path must:
 - Order tool instructions logically (e.g. segment first, then correlate within segment)
 - Only reference columns that exist in the dataset profile
 
+Additionally, identify the dataset's primary outcome metric — the binary variable most likely
+being analyzed as the target (churn, conversion, fraud, default, etc.). Detect binary columns
+by finding numeric columns where min=0 and max=1. Choose the one most central to the business
+question. If no binary column exists, set primary_metric to null.
+
 Respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks.
 
 Use exactly this structure:
 
 {
+  "primary_metric": {
+    "label": "<human-readable rate name, e.g. 'Conversion Rate', 'Churn Rate', 'Fraud Rate'>",
+    "column": "<exact column name from the dataset>",
+    "rate_pct": <mean * 100 as a float with one decimal, e.g. 35.2>
+  },
   "paths": [
     {
       "title": "<short path name, 3-6 words>",
@@ -43,6 +55,8 @@ Use exactly this structure:
     }
   ]
 }
+
+If no binary outcome column exists, use: "primary_metric": null
 
 Rules:
 - Return exactly 5 paths. No more, no less.
@@ -103,7 +117,14 @@ class ResearchPath(BaseModel):
         return v
 
 
+class PrimaryMetric(BaseModel):
+    label: str    # e.g. "Conversion Rate", "Churn Rate"
+    column: str   # exact column name in the dataset
+    rate_pct: float  # mean * 100
+
+
 class ResearcherOutput(BaseModel):
+    primary_metric: PrimaryMetric | None = None
     paths: list[ResearchPath]
 
     @field_validator("paths")
@@ -219,11 +240,19 @@ def call_researcher_agent(metadata: dict, de_findings: dict) -> dict:
     """
     context = build_researcher_context(metadata, de_findings)
 
-    response = client.messages.create(
+    response = with_backoff(
+        client.messages.create,
         model="claude-haiku-4-5-20251001",
         max_tokens=3000,
         system=RESEARCHER_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context}],
+    )
+    st.session_state.total_input_tokens += response.usage.input_tokens
+    st.session_state.total_output_tokens += response.usage.output_tokens
+    st.session_state.estimated_cost_usd += calculate_cost(
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        model="claude-haiku-4-5-20251001",
     )
 
     raw_text = (

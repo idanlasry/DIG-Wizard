@@ -3,7 +3,7 @@ import json
 from pydantic import BaseModel, ValidationError
 from typing import Any
 import pandas as pd
-from starter_kit import TOOL_MAP
+from core.starter_kit import TOOL_MAP
 
 
 # ── 1. PYDANTIC VALIDATION MODEL ───────────────────────────────────────

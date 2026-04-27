@@ -28,12 +28,16 @@ There are no automated tests. Manual testing means uploading a CSV via the Strea
 | File | Role |
 |------|------|
 | [app.py](app.py) | Entry point. 3-column Streamlit layout, stage router, session_state init |
-| [profiler.py](profiler.py) | Hardcoded pandas profiler — `get_dataset_profile(df)` returns metadata dict |
-| [de_agent.py](de_agent.py) | Data Engineer LLM agent — interprets profiler output, returns quality JSON |
-| [pm_agent.py](pm_agent.py) | PM orchestrator agent — gates stage transitions, generates user-facing summaries |
-| [researcher_agent.py](researcher_agent.py) | Researcher LLM agent — generates exactly 5 research paths, each with 2–5 ordered `ToolInstruction` objects |
-| [starter_kit.py](starter_kit.py) | 10 hardcoded analysis functions + `TOOL_MAP` registry |
-| [switchboard.py](switchboard.py) | Validates and dispatches `ToolInstruction` JSON to `TOOL_MAP` functions |
+| [core/profiler.py](core/profiler.py) | Hardcoded pandas profiler — `get_dataset_profile(df)` returns metadata dict |
+| [core/starter_kit.py](core/starter_kit.py) | 10 hardcoded analysis functions + `TOOL_MAP` registry |
+| [core/switchboard.py](core/switchboard.py) | Validates and dispatches `ToolInstruction` JSON to `TOOL_MAP` functions |
+| [agents/de_agent.py](agents/de_agent.py) | Data Engineer LLM agent — interprets profiler output, returns quality JSON |
+| [agents/pm_agent.py](agents/pm_agent.py) | PM orchestrator agent — gates stage transitions, generates user-facing summaries |
+| [agents/researcher_agent.py](agents/researcher_agent.py) | Researcher LLM agent — generates exactly 5 research paths, each with 2–5 ordered `ToolInstruction` objects |
+| [agents/da_agent.py](agents/da_agent.py) | Data Analyst LLM agent — interprets tool results, explains business meaning |
+| [agents/bi_agent.py](agents/bi_agent.py) | BI Developer LLM agent — generates KPIs and Plotly chart configs from findings |
+| [agents/synthesis_agent.py](agents/synthesis_agent.py) | Synthesis LLM agent — cross-path narrative + actionable recommendations |
+| [utils/utils.py](utils/utils.py) | `with_backoff()` retry helper and `calculate_cost()` for token cost tracking |
 
 ### Pipeline stages
 
@@ -41,7 +45,7 @@ There are no automated tests. Manual testing means uploading a CSV via the Strea
 START → AUDIT → RESEARCH → ANALYSIS → DASHBOARD
 ```
 
-`st.session_state.stage` is the router. `app.py` renders different UI blocks based on the current stage. See [session_state_registry.md](session_state_registry.md) for the full list of session_state keys and their schemas.
+`st.session_state.stage` is the router. `app.py` renders different UI blocks based on the current stage. See [docs/session_state_registry.md](docs/session_state_registry.md) for the full list of session_state keys and their schemas.
 
 ### Agent module structure
 
@@ -72,7 +76,7 @@ The Researcher Agent returns `ToolInstruction` objects `{"tool": "<name>", "para
 
 ## Build status
 
-The project follows a 15-stage build plan detailed in [DIG ANALYTICS CLAUDE.md](DIG%20ANALYTICS%20CLAUDE.md). **Current stage: 10 — DA / Stats Agent.** Stages 1–9 are complete.
+The project follows a 15-stage build plan detailed in [docs/DIG ANALYTICS CLAUDE.md](docs/DIG%20ANALYTICS%20CLAUDE.md). **Current stage: 10 — DA / Stats Agent.** Stages 1–9 are complete.
 
 Stage 10 multi-path loop support is complete: `pm_summaries` accumulates all PM messages, `analysis_results` accumulates all DA findings, the 3-path cap is enforced in the ANALYSIS nav block, and the PM Agent receives `previous_findings` context for synthesis paragraphs at path N>1. The report panel now has 5 tabs including DA FINDINGS (multi-path) and PM LOG.
 
