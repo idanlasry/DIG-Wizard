@@ -1,5 +1,19 @@
 # DIG Wizard
 
+
+# DIG Wizard — AI intagrted Data Analysis Platform 
+
+> Upload a CSV. Six AI agents audit quality, plan research paths, run 
+> statistical tools, and deliver an executive dashboard — no SQL, no code, 
+> no configuration.
+
+🔗 **[Live Demo](https://dig-wizard-6nxd33o7va4tvdygxvbsag.streamlit.app/)** · 
+📁 Sample dataset included: `Bank_Churn.csv`
+
+![DIG Analytics Dashboard](image.png)
+
+---
+
 **DIG** (Description → Introspection → Goal Setting) is a multi-agent AI platform that turns any CSV into an executive-grade data analysis — no SQL, no code, no dashboards to configure. Upload a file, and six specialized LLM agents audit quality, plan research paths, run statistical tools, and deliver a structured report with visualizations and recommendations.
 
 ---
@@ -112,10 +126,8 @@ Then open [http://localhost:8501](http://localhost:8501), upload a CSV, and clic
 
 | Stage | Status |
 |-------|--------|
-| 1–9: Environment, session state, UI, profiler, starter kit, switchboard, PM / DE / Researcher agents | ✅ Complete |
-| 10: DA / Stats Agent + multi-path loop | ✅ Complete |
-| 11: BI Developer Agent (Plotly charts) | 🔧 In progress |
-| 12–15: Synthesis, validation, deployment, polish | ⏳ Planned |
+| 1–13: Full pipeline (profiler, 6 agents, multi-path loop, dashboard, synthesis) | ✅ Complete |
+| 14: Deployment, README, portfolio | ✅ Complete |
 
 ---
 
