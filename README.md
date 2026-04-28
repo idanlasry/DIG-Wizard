@@ -3,8 +3,8 @@
 
 # DIG Wizard — AI intagrted Data Analysis Platform 
 
-> Upload a CSV. Six AI agents audit quality, plan research paths, run 
-> statistical tools, and deliver an executive dashboard — no SQL, no code, 
+> Upload a CSV and Six AI agents will lead you through audit quality, plan research paths, run 
+> Analysis tools, and deliver an executive dashboard — no SQL, no code, 
 > no configuration.
 
 🔗 **[Live Demo](https://dig-wizard-6nxd33o7va4tvdygxvbsag.streamlit.app/)** · 
@@ -102,7 +102,7 @@ DIG Wizard/
 **Requirements:** Python 3.12+, [uv](https://github.com/astral-sh/uv), an Anthropic API key.
 
 ```bash
-git clone https://github.com/your-username/dig-wizard.git
+git clone https://github.com/idanlasry/DIG-Wizard.git
 cd dig-wizard
 
 # Copy env template and add your key
