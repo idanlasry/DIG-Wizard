@@ -21,7 +21,7 @@ if "ANTHROPIC_API_KEY" not in os.environ:
 # 1. PAGE CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="DIG Analytics v2.0",
+    page_title="DIG Analytics Wizard",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -130,7 +130,7 @@ if "initialized" not in st.session_state:
     )
     st.session_state.current_path = None
     st.session_state.analysis_results = []
-    st.session_state.pm_summaries = []      # accumulates all PM user_messages
+    st.session_state.pm_summaries = []  # accumulates all PM user_messages
     st.session_state.research_paths = None
     st.session_state.primary_metric = None
     st.session_state.tool_result = None
@@ -190,7 +190,11 @@ def build_html_report(
         for col, stats in num_summary.items():
             if stats.get("min") == 0 and stats.get("max") == 1:
                 rate = stats.get("mean", 0) * 100
-                pm = {"label": col.replace("_", " ").title(), "column": col, "rate_pct": rate}
+                pm = {
+                    "label": col.replace("_", " ").title(),
+                    "column": col,
+                    "rate_pct": rate,
+                }
                 break
     snapshot_items = [
         ("Total Rows", f"{total_customers:,}"),
@@ -212,11 +216,19 @@ def build_html_report(
         if chart_type == "bar":
             trace = go.Bar(x=chart["x"], y=chart["y"], marker_color="#00ff9f")
         elif chart_type == "line":
-            trace = go.Scatter(x=chart["x"], y=chart["y"], mode="lines",
-                               line=dict(color="#00ff9f", width=2))
+            trace = go.Scatter(
+                x=chart["x"],
+                y=chart["y"],
+                mode="lines",
+                line=dict(color="#00ff9f", width=2),
+            )
         elif chart_type == "scatter":
-            trace = go.Scatter(x=chart["x"], y=chart["y"], mode="markers",
-                               marker=dict(color="#00ff9f", size=6))
+            trace = go.Scatter(
+                x=chart["x"],
+                y=chart["y"],
+                mode="markers",
+                marker=dict(color="#00ff9f", size=6),
+            )
         else:
             trace = go.Heatmap(z=chart["y"], colorscale="Viridis")
         fig = go.Figure(data=[trace])
@@ -241,7 +253,11 @@ def build_html_report(
             f"<em>{explanation}</em></div>"
         )
 
-    recs_html = '<ul class="recs">' + "".join(f"<li>{r}</li>" for r in recommendations) + "</ul>"
+    recs_html = (
+        '<ul class="recs">'
+        + "".join(f"<li>{r}</li>" for r in recommendations)
+        + "</ul>"
+    )
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>DIG Analytics Report</title>
@@ -272,7 +288,7 @@ p{{margin:0.3rem 0;font-size:0.8rem;line-height:1.4}}
 <h2>Executive Summary</h2><div class="narrative">{pm_final_summary}</div>
 <h2>Dataset Snapshot</h2><div class="snapshot-row">{snapshot_cards}</div>
 <h2>Key Performance Indicators</h2><div class="kpi-row">{kpi_items}</div>
-<h2>Dashboard Analysis</h2><div class="chart-grid">{''.join(chart_blocks)}</div>
+<h2>Dashboard Analysis</h2><div class="chart-grid">{"".join(chart_blocks)}</div>
 <h2>Strategic Narrative</h2><div class="narrative">{narrative}</div>
 <h2>Recommendations</h2>{recs_html}
 </body></html>"""
@@ -410,7 +426,9 @@ def build_pm_summaries_md() -> str:
 # ==========================================
 # 5. HEADER UI
 # ==========================================
-st.markdown('<h1 class="cyber-header">DIG_ANALYTICS_V2.0</h1>', unsafe_allow_html=True)
+st.markdown(
+    '<h1 class="cyber-header">DIG ANALYTICS WIZARD</h1>', unsafe_allow_html=True
+)
 st.divider()
 
 # ==========================================
@@ -438,31 +456,56 @@ with col_main:
 
     # ── STAGE: START ───────────────────────────────────────────────────
     if st.session_state.stage == "START":
-        st.markdown("##### 📥 STEP_01: DATA_INTAKE")
+        st.markdown("##### 📥 STEP 01: DATA INTAKE")
 
-        if st.button("🏦 USE BANK DEMO DATA", help="Load the Bank Churn sample dataset"):
+        if st.button(
+            "🏦 USE BANK DEMO DATA", help="Load the Bank Churn sample dataset"
+        ):
             try:
                 df = pd.read_csv("practice_data/Bank_Churn.csv")
                 st.session_state.raw_data = df
+                profile = get_dataset_profile(df)
+                st.session_state.metadata = profile
+                add_log(
+                    f"PROFILER: Scan complete. {profile['shape']['rows']}R × {profile['shape']['cols']}C.",
+                    "system",
+                )
+                add_log(
+                    f"PROFILER: {len(profile['numeric_summary'])} numeric, {len(profile['categorical_summary'])} categorical cols."
+                )
+                add_log(f"PROFILER: {profile['duplicate_rows']} duplicate rows found.")
                 st.session_state.stage = "AUDIT"
                 st.session_state.report_view = "metadata"
-                add_log(f"DEMO_DATA_LOADED: Bank_Churn — {len(df)} rows, {len(df.columns)} columns.", "system")
+                add_log(
+                    f"DEMO_DATA_LOADED: Bank_Churn — {len(df)} rows, {len(df.columns)} columns.",
+                    "system",
+                )
                 st.rerun()
             except Exception as e:
                 st.error(f"Error loading demo data: {e}")
                 add_log(f"ERROR: Failed to read demo CSV. {e}", "error")
 
         st.markdown("— or —")
-        uploaded_file = st.file_uploader("UPLOAD_CSV_FILE", type="csv")
+        uploaded_file = st.file_uploader("UPLOAD CSV FILE", type="csv")
 
         if uploaded_file is not None:
             try:
                 df = pd.read_csv(uploaded_file)
                 st.session_state.raw_data = df
+                profile = get_dataset_profile(df)
+                st.session_state.metadata = profile
+                add_log(
+                    f"PROFILER: Scan complete. {profile['shape']['rows']}R × {profile['shape']['cols']}C.",
+                    "system",
+                )
+                add_log(
+                    f"PROFILER: {len(profile['numeric_summary'])} numeric, {len(profile['categorical_summary'])} categorical cols."
+                )
+                add_log(f"PROFILER: {profile['duplicate_rows']} duplicate rows found.")
                 st.session_state.stage = "AUDIT"
                 st.session_state.report_view = "metadata"
                 add_log(
-                    f"DATA_INGESTED: {len(df)} rows, {len(df.columns)} columns.",
+                    f"DATA INGESTED: {len(df)} rows, {len(df.columns)} columns.",
                     "system",
                 )
                 st.rerun()
@@ -472,36 +515,20 @@ with col_main:
 
     # ── STAGE: AUDIT ───────────────────────────────────────────────────
     elif st.session_state.stage == "AUDIT":
-        st.markdown("##### 🔍 STEP_02: DATA_AUDIT")
+        st.markdown("##### 🔍 STEP 02: DATA AUDIT")
         df = st.session_state.raw_data
         st.success(f"✅ Data loaded: **{len(df):,} rows × {len(df.columns)} cols**")
 
         # Only show DE button if DE hasn't run yet
         if st.session_state.de_findings is None:
             if st.session_state.de_running:
-                st.button("⚡ INITIALIZE_DE_AGENT", disabled=True)
+                st.button("⚡INITIALIZE DE AGENT", disabled=True)
                 with st.spinner("DE Agent running..."):
-                    add_log("PROFILER: Starting hardcoded scan...", "system")
                     try:
-                        profile = get_dataset_profile(df)
-                        st.session_state.metadata = profile
-
-                        rows = profile["shape"]["rows"]
-                        cols_count = profile["shape"]["cols"]
-                        dupes = profile["duplicate_rows"]
-                        num_count = len(profile["numeric_summary"])
-                        cat_count = len(profile["categorical_summary"])
-
-                        add_log(
-                            f"PROFILER: Scan complete. {rows}R × {cols_count}C.", "system"
-                        )
-                        add_log(
-                            f"PROFILER: {num_count} numeric, {cat_count} categorical cols."
-                        )
-                        add_log(f"PROFILER: {dupes} duplicate rows found.")
+                        profile = st.session_state.metadata
 
                         # ── DE AGENT ──────────────────────────────────────
-                        add_log("DE_AGENT: Calling DE Agent...", "system")
+                        add_log("DE AGENT: Calling DE Agent...", "system")
                         st.session_state.api_call_count += 1
                         de_response = run_de_agent(profile)
 
@@ -509,7 +536,9 @@ with col_main:
                             add_log(f"DE_ERROR: {de_response['detail']}", "error")
                             print(f"[ERROR] DE Agent: {de_response['detail']}")
                             st.session_state.de_running = False
-                            st.error("⚠️ DE Agent failed. Try again or check system logs.")
+                            st.error(
+                                "⚠️ DE Agent failed. Try again or check system logs."
+                            )
                         else:
                             st.session_state.de_findings = de_response
                             st.session_state.report_view = "de_report"
@@ -534,10 +563,16 @@ with col_main:
                                 add_log(f"PM_ERROR: {pm_response['detail']}", "error")
                                 print(f"[ERROR] PM Agent: {pm_response['detail']}")
                                 st.session_state.de_running = False
-                                st.error("⚠️ PM Agent failed. Try again or check system logs.")
+                                st.error(
+                                    "⚠️ PM Agent failed. Try again or check system logs."
+                                )
                             else:
-                                add_log(f"PM: {pm_response['summary_for_log']}", "system")
-                                st.session_state.pm_summaries.append(pm_response["user_message"])
+                                add_log(
+                                    f"PM: {pm_response['summary_for_log']}", "system"
+                                )
+                                st.session_state.pm_summaries.append(
+                                    pm_response["user_message"]
+                                )
                                 st.session_state.pm_ready = pm_response.get(
                                     "ready_to_proceed", False
                                 )
@@ -572,7 +607,7 @@ with col_main:
             st.markdown("---")
 
             if st.session_state.pm_ready:
-                if st.button("🚀 PROCEED_TO_RESEARCH"):
+                if st.button("🚀 PROCEED TO PONDER RESEARCH PATHS"):
                     add_log("RESEARCHER: Generating research paths...", "system")
                     st.session_state.api_call_count += 1
                     result = run_researcher_agent(
@@ -582,16 +617,27 @@ with col_main:
                     if "error" in result:
                         add_log(f"RESEARCHER_ERROR: {result['detail']}", "error")
                         print(f"[ERROR] Researcher Agent: {result['detail']}")
-                        st.error("⚠️ Researcher Agent failed. Try again or check system logs.")
+                        st.error(
+                            "⚠️ Researcher Agent failed. Try again or check system logs."
+                        )
                     else:
                         st.session_state.research_paths = result["paths"]
                         pm_result = result.get("primary_metric")
                         st.session_state.primary_metric = pm_result
-                        add_log(f"RESEARCHER: {len(result['paths'])} paths generated.", "system")
+                        add_log(
+                            f"RESEARCHER: {len(result['paths'])} paths are recommended.",
+                            "system",
+                        )
                         if pm_result:
-                            add_log(f"RESEARCHER: Primary metric detected — {pm_result['label']} ({pm_result['column']}) at {pm_result['rate_pct']:.1f}%", "system")
+                            add_log(
+                                f"RESEARCHER: Primary metric detected — {pm_result['label']} ({pm_result['column']}) at {pm_result['rate_pct']:.1f}%",
+                                "system",
+                            )
                         else:
-                            add_log("RESEARCHER: No primary metric detected (no binary column found).", "system")
+                            add_log(
+                                "RESEARCHER: No primary metric detected (no binary column found).",
+                                "system",
+                            )
                         st.session_state.stage = "RESEARCH"
                         st.rerun()
             else:
@@ -608,8 +654,7 @@ with col_main:
         st.markdown("**Select a research path to analyze:**")
 
         used_titles = {
-            r["path"]["title"]
-            for r in st.session_state.get("analysis_results", [])
+            r["path"]["title"] for r in st.session_state.get("analysis_results", [])
         }
 
         for i, path in enumerate(paths):
@@ -622,9 +667,7 @@ with col_main:
                     )
                 st.markdown(f"**{i + 1}. {path['title']}**")
                 st.caption(path["question"])
-                tool_names = " → ".join(
-                    t["tool"] for t in path["tool_instructions"]
-                )
+                tool_names = " → ".join(t["tool"] for t in path["tool_instructions"])
                 st.markdown(
                     f"<span style='color:#888; font-size:0.8rem; font-family:monospace'>"
                     f"TOOLS: {tool_names}</span>",
@@ -632,7 +675,9 @@ with col_main:
                 )
                 if already_used:
                     st.markdown("</div>", unsafe_allow_html=True)
-                if st.button(f"▶ SELECT PATH {i + 1}", key=f"path_{i}", disabled=already_used):
+                if st.button(
+                    f"▶ SELECT PATH {i + 1}", key=f"path_{i}", disabled=already_used
+                ):
                     st.session_state.current_path = path
                     add_log(f"PATH_SELECTED: {path['title']}", "system")
 
@@ -652,7 +697,9 @@ with col_main:
                         st.error("⚠️ PM Agent failed. Try again or check system logs.")
                     else:
                         add_log(f"PM: {pm_response['summary_for_log']}", "system")
-                        st.session_state.pm_summaries.append(pm_response["user_message"])
+                        st.session_state.pm_summaries.append(
+                            pm_response["user_message"]
+                        )
                         st.session_state.stage = "ANALYSIS"
                         st.session_state.report_view = "pm_summary"
                         st.rerun()
@@ -662,7 +709,10 @@ with col_main:
             n = len(st.session_state.analysis_results)
             label = "path" if n == 1 else "paths"
             st.caption(f"You've already analysed {n} {label}.")
-            if st.button("⏭ Regret — proceed to dashboard with current findings", key="regret_to_dashboard"):
+            if st.button(
+                "⏭ Regret — proceed to dashboard with current findings",
+                key="regret_to_dashboard",
+            ):
                 st.session_state.stage = "DASHBOARD"
                 st.rerun()
 
@@ -695,7 +745,9 @@ with col_main:
                                 f"TOOL_ERROR [{tool_name}]: {result['detail']}", "error"
                             )
                             print(f"[ERROR] Tool {tool_name}: {result['detail']}")
-                            st.error(f"⚠️ Tool {tool_name} failed. Try again or check system logs.")
+                            st.error(
+                                f"⚠️ Tool {tool_name} failed. Try again or check system logs."
+                            )
                             all_ok = False
                             break
 
@@ -713,7 +765,9 @@ with col_main:
                         if "error" in da_response:
                             add_log(f"DA_ERROR: {da_response['detail']}", "error")
                             print(f"[ERROR] DA Agent: {da_response['detail']}")
-                            st.error("⚠️ DA Agent failed. Try again or check system logs.")
+                            st.error(
+                                "⚠️ DA Agent failed. Try again or check system logs."
+                            )
                         else:
                             st.session_state.da_findings = da_response
                             add_log(f"DA_AGENT: Analysis complete.", "system")
@@ -770,7 +824,9 @@ with col_main:
                             st.session_state.stage = "DASHBOARD"
                             st.rerun()
                 else:
-                    st.warning("⚠️ 3-path limit reached. Proceed to dashboard for final synthesis.")
+                    st.warning(
+                        "⚠️ 3-path limit reached. Proceed to dashboard for final synthesis."
+                    )
                     if st.button("📈 GO_TO_DASHBOARD"):
                         st.session_state.stage = "DASHBOARD"
                         st.rerun()
@@ -843,7 +899,13 @@ with col_main:
             kpis = cfg["kpis"]
             kpi_cols = st.columns(len(kpis))
             for col, kpi in zip(kpi_cols, kpis):
-                delta_sym = "↑" if kpi["delta"] == "up" else "↓" if kpi["delta"] == "down" else "~"
+                delta_sym = (
+                    "↑"
+                    if kpi["delta"] == "up"
+                    else "↓"
+                    if kpi["delta"] == "down"
+                    else "~"
+                )
                 with col:
                     st.metric(label=kpi["label"], value=kpi["value"], delta=delta_sym)
                     st.caption(kpi["context"])
@@ -922,7 +984,9 @@ with col_report:
             st.rerun()
 
     with tab_cols[3]:
-        if st.button("📊 DA FINDINGS", disabled=len(st.session_state.analysis_results) == 0):
+        if st.button(
+            "📊 DA FINDINGS", disabled=len(st.session_state.analysis_results) == 0
+        ):
             st.session_state.report_view = "da_findings"
             st.rerun()
 
