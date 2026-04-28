@@ -8,7 +8,7 @@
 > no configuration.
 
 🔗 **[Live Demo](https://dig-wizard-6nxd33o7va4tvdygxvbsag.streamlit.app/)** · 
-📁 Sample dataset included: `Bank_Churn.csv`
+📁 Sample dataset included: `Bank_Churn.csv` from kaggele datasets
 
 ![DIG Analytics Dashboard](image.png)
 

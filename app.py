@@ -647,7 +647,7 @@ with col_main:
 
     # ── STAGE: RESEARCH ───────────────────────────────────────────────────
     elif st.session_state.stage == "RESEARCH":
-        st.markdown("##### 🔬 STEP_03: RESEARCH_PATHS")
+        st.markdown("##### 🔬 STEP 03: SELECT RESEARCH PATHS")
 
         # ── PATH SELECTION UI ─────────────────────────────────────────────
         paths = st.session_state.research_paths
@@ -679,7 +679,7 @@ with col_main:
                     f"▶ SELECT PATH {i + 1}", key=f"path_{i}", disabled=already_used
                 ):
                     st.session_state.current_path = path
-                    add_log(f"PATH_SELECTED: {path['title']}", "system")
+                    add_log(f"PATH SELECTED: {path['title']}", "system")
 
                     # PM gates transition to ANALYSIS
                     st.session_state.api_call_count += 1
@@ -711,14 +711,14 @@ with col_main:
             st.caption(f"You've already analysed {n} {label}.")
             if st.button(
                 "⏭ Regret — proceed to dashboard with current findings",
-                key="regret_to_dashboard",
+                key="Finish analysis : proceed to dashboard",
             ):
                 st.session_state.stage = "DASHBOARD"
                 st.rerun()
 
     # ── STAGE: ANALYSIS ────────────────────────────────────────────────
     elif st.session_state.stage == "ANALYSIS":
-        st.markdown("##### 📊 STEP_04: ANALYSIS")
+        st.markdown("##### 📊 STEP 04: ANALYSIS")
         path = st.session_state.current_path
 
         if path is None:
@@ -729,7 +729,7 @@ with col_main:
 
             # ── RUN TOOLS + DA AGENT (first visit for this path) ──────────
             if st.session_state.da_findings is None:
-                if st.button("⚡ RUN_ANALYSIS"):
+                if st.button("⚡ RUN ANALYSIS"):
                     df = st.session_state.raw_data
                     tool_results = []
                     all_ok = True
