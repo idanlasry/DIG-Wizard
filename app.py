@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.profiler import get_dataset_profile
 from core.switchboard import run_tool
 from agents.pm_agent import run_pm_gate
@@ -120,7 +120,7 @@ if "initialized" not in st.session_state:
     st.session_state.report_view = "metadata"  # Active tab in living report
     st.session_state.history_logs = [
         {
-            "time": datetime.now().strftime("%H:%M:%S"),
+            "time": (datetime.now() + timedelta(hours=3)).strftime("%H:%M:%S"),
             "msg": "System ready.",
             "type": "system",
         }
@@ -548,7 +548,9 @@ with col_main:
                         de_response = run_de_agent(profile)
 
                         if "error" in de_response:
-                            add_log(f"Data Engineer Error: {de_response['detail']}", "error")
+                            add_log(
+                                f"Data Engineer Error: {de_response['detail']}", "error"
+                            )
                             print(f"[ERROR] DE Agent: {de_response['detail']}")
                             st.session_state.de_running = False
                             st.error(
@@ -566,7 +568,9 @@ with col_main:
                             )
 
                             # ── PM GATE ────────────────────────────────────
-                            add_log("Product Manager: Reviewing audit findings...", "system")
+                            add_log(
+                                "Product Manager: Reviewing audit findings...", "system"
+                            )
                             st.session_state.api_call_count += 1
                             pm_response = run_pm_gate(
                                 current_stage="AUDIT",
@@ -575,7 +579,10 @@ with col_main:
                             )
 
                             if "error" in pm_response:
-                                add_log(f"Product Manager Error: {pm_response['detail']}", "error")
+                                add_log(
+                                    f"Product Manager Error: {pm_response['detail']}",
+                                    "error",
+                                )
                                 print(f"[ERROR] PM Agent: {pm_response['detail']}")
                                 st.session_state.de_running = False
                                 st.error(
@@ -583,7 +590,8 @@ with col_main:
                                 )
                             else:
                                 add_log(
-                                    f"Product Manager: {pm_response['summary_for_log']}", "system"
+                                    f"Product Manager: {pm_response['summary_for_log']}",
+                                    "system",
                                 )
                                 st.session_state.pm_summaries.append(
                                     pm_response["user_message"]
@@ -623,7 +631,9 @@ with col_main:
 
             if st.session_state.pm_ready:
                 if st.button("🚀 Generate Research Questions"):
-                    add_log("Research Analyst: Generating research questions...", "system")
+                    add_log(
+                        "Research Analyst: Generating research questions...", "system"
+                    )
                     st.session_state.api_call_count += 1
                     result = run_researcher_agent(
                         metadata=st.session_state.metadata,
@@ -707,11 +717,18 @@ with col_main:
                     )
 
                     if "error" in pm_response:
-                        add_log(f"Product Manager Error: {pm_response['detail']}", "error")
+                        add_log(
+                            f"Product Manager Error: {pm_response['detail']}", "error"
+                        )
                         print(f"[ERROR] PM Agent: {pm_response['detail']}")
-                        st.error("⚠️ Product Manager step failed. Try again or check the activity log.")
+                        st.error(
+                            "⚠️ Product Manager step failed. Try again or check the activity log."
+                        )
                     else:
-                        add_log(f"Product Manager: {pm_response['summary_for_log']}", "system")
+                        add_log(
+                            f"Product Manager: {pm_response['summary_for_log']}",
+                            "system",
+                        )
                         st.session_state.pm_summaries.append(
                             pm_response["user_message"]
                         )
@@ -778,7 +795,9 @@ with col_main:
                         da_response = run_da_agent(path, tool_results)
 
                         if "error" in da_response:
-                            add_log(f"Data Analyst Error: {da_response['detail']}", "error")
+                            add_log(
+                                f"Data Analyst Error: {da_response['detail']}", "error"
+                            )
                             print(f"[ERROR] DA Agent: {da_response['detail']}")
                             st.error(
                                 "⚠️ Data Analyst step failed. Try again or check the activity log."
@@ -863,7 +882,9 @@ with col_main:
             if "error" in pm_response:
                 add_log(f"Product Manager Error: {pm_response['detail']}", "error")
                 print(f"[ERROR] PM Agent: {pm_response['detail']}")
-                st.error("⚠️ Product Manager step failed. Try again or check the activity log.")
+                st.error(
+                    "⚠️ Product Manager step failed. Try again or check the activity log."
+                )
             else:
                 st.session_state.pm_final_summary = pm_response["user_message"]
                 st.session_state.pm_summaries.append(pm_response["user_message"])
@@ -881,7 +902,9 @@ with col_main:
             if "error" in bi_response:
                 add_log(f"BI Developer Error: {bi_response['detail']}", "error")
                 print(f"[ERROR] BI Agent: {bi_response['detail']}")
-                st.error("⚠️ BI Developer step failed. Try again or check the activity log.")
+                st.error(
+                    "⚠️ BI Developer step failed. Try again or check the activity log."
+                )
             else:
                 st.session_state.chart_configs = bi_response
                 add_log("BI Developer: Dashboard config ready.", "system")
@@ -898,7 +921,9 @@ with col_main:
             if "error" in syn_response:
                 add_log(f"Strategy Analyst Error: {syn_response['detail']}", "error")
                 print(f"[ERROR] Synthesis Agent: {syn_response['detail']}")
-                st.error("⚠️ Strategy Analyst step failed. Try again or check the activity log.")
+                st.error(
+                    "⚠️ Strategy Analyst step failed. Try again or check the activity log."
+                )
             else:
                 st.session_state.synthesis = syn_response
                 add_log("Strategy Analyst: Recommendations ready.", "system")
@@ -989,12 +1014,16 @@ with col_report:
             st.rerun()
 
     with tab_cols[1]:
-        if st.button("🔧 Quality Report", disabled=st.session_state.de_findings is None):
+        if st.button(
+            "🔧 Quality Report", disabled=st.session_state.de_findings is None
+        ):
             st.session_state.report_view = "de_report"
             st.rerun()
 
     with tab_cols[2]:
-        if st.button("💬 Pipeline Summary", disabled=len(st.session_state.pm_summaries) == 0):
+        if st.button(
+            "💬 Pipeline Summary", disabled=len(st.session_state.pm_summaries) == 0
+        ):
             st.session_state.report_view = "pm_summary"
             st.rerun()
 
@@ -1006,7 +1035,9 @@ with col_report:
             st.rerun()
 
     with tab_cols[4]:
-        if st.button("💬 Activity Log", disabled=len(st.session_state.pm_summaries) == 0):
+        if st.button(
+            "💬 Activity Log", disabled=len(st.session_state.pm_summaries) == 0
+        ):
             st.session_state.report_view = "pm_log"
             st.rerun()
 
