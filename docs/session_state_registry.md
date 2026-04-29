@@ -20,6 +20,7 @@
 | `tool_result` | List of raw output dicts from Starter Kit functions (one per tool instruction) | ANALYSIS stage — Switchboard execution | DA Agent (as `tool_results`) |
 | `da_findings` | DA Agent interpretation of tool results for the current path | ANALYSIS stage — DA Agent call | None — reset to `None` on next path; persisted in `analysis_results` |
 | `analysis_results` | List of all completed path dicts — accumulates across the loop | app.py startup (`[]`) | PM Agent (as `previous_findings`), BI Agent, Synthesis Agent |
+| `cross_path_summary` | Pre-computed cross-path signals dict — most-cited columns, shared stat labels, potential overlaps | app.py startup (`{}`); updated after each path completes | DA Agent (paths 2+, as `PRIOR PATH SIGNALS`), Synthesis Agent (as `CROSS-PATH SIGNALS`) |
 | `chart_configs` | BI Developer Agent output — KPIs + Plotly chart configs + narrative | DASHBOARD stage — BI Agent call | Synthesis Agent (as `chart_configs`) |
 | `synthesis` | Synthesis Agent output — cross-path narrative + recommendations | DASHBOARD stage — Synthesis Agent call | None — rendered in DASHBOARD and HTML report |
 | `api_call_count` | Running count of LLM API calls made this session | app.py startup (`0`) | None — footer display only |

@@ -8,6 +8,7 @@ from agents.pm_agent import run_pm_gate
 from agents.de_agent import run_de_agent
 from agents.researcher_agent import run_researcher_agent
 from agents.da_agent import run_da_agent
+from core.cross_path_aggregator import build_cross_path_summary
 from agents.bi_agent import run_bi_agent
 from agents.synthesis_agent import run_synthesis_agent
 import plotly.graph_objects as go
@@ -129,6 +130,7 @@ if "initialized" not in st.session_state:
         "# DIG Analytics Executive Summary\n*Awaiting data ingestion...*"
     )
     st.session_state.current_path = None
+    st.session_state.cross_path_summary = {}
     st.session_state.analysis_results = []
     st.session_state.pm_summaries = []  # accumulates all PM user_messages
     st.session_state.research_paths = None
@@ -792,7 +794,11 @@ with col_main:
                         # Data Analyst interprets all results
                         add_log("Data Analyst: Interpreting results...", "system")
                         st.session_state.api_call_count += 1
-                        da_response = run_da_agent(path, tool_results)
+                        da_response = run_da_agent(
+                            path,
+                            tool_results,
+                            cross_path_summary=st.session_state.cross_path_summary,
+                        )
 
                         if "error" in da_response:
                             add_log(
@@ -813,6 +819,14 @@ with col_main:
                                     "tool_result": tool_results,
                                     "da_findings": da_response,
                                 }
+                            )
+
+                            # Build cross-path summary for next path's DA call
+                            st.session_state.cross_path_summary = (
+                                build_cross_path_summary(
+                                    st.session_state.analysis_results,
+                                    st.session_state.metadata,
+                                )
                             )
 
                             st.session_state.report_view = "da_findings"
@@ -917,6 +931,7 @@ with col_main:
                 syn_response = run_synthesis_agent(
                     st.session_state.analysis_results,
                     st.session_state.chart_configs,
+                    cross_path_summary=st.session_state.cross_path_summary,
                 )
             if "error" in syn_response:
                 add_log(f"Strategy Analyst Error: {syn_response['detail']}", "error")

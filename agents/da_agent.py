@@ -125,15 +125,39 @@ def _truncate_result(result: dict) -> str:
     return serialized[:_MAX_RESULT_CHARS] + f"\n... [truncated — {len(serialized) - _MAX_RESULT_CHARS} chars omitted]"
 
 
-def build_da_context(current_path: dict, tool_results: list[dict]) -> str:
+def build_da_context(
+    current_path: dict,
+    tool_results: list[dict],
+    cross_path_summary: dict | None = None,
+) -> str:
     """
     Builds the user-turn message for the DA Agent.
-    Includes: research question, tool results (all of them, serialized).
+    Includes: research question, optional prior-path signals, tool results.
     """
     parts = []
 
     parts.append(f"RESEARCH PATH: {current_path.get('title', '?')}")
     parts.append(f"BUSINESS QUESTION: {current_path.get('question', '?')}")
+
+    if cross_path_summary:
+        n = cross_path_summary.get("paths_completed", 0)
+        parts.append(f"\nPRIOR PATH SIGNALS ({n} path(s) completed before this one):")
+
+        cited = cross_path_summary.get("most_cited_columns", {})
+        if cited:
+            col_str = ", ".join(f"{c} ({cnt}x)" for c, cnt in cited.items())
+            parts.append(f"- Most-cited columns across prior paths: {col_str}")
+
+        shared_labels = cross_path_summary.get("shared_stat_labels", [])
+        if shared_labels:
+            parts.append(f"- Stat labels seen in multiple paths: {', '.join(shared_labels)}")
+
+        headlines = cross_path_summary.get("headlines", [])
+        if headlines:
+            parts.append("- Prior path headlines:")
+            for h in headlines:
+                parts.append(f'  • "{h["path"]}": {h["headline"]}')
+
     parts.append("")
     parts.append(f"TOOL RESULTS ({len(tool_results)} total):")
 
@@ -152,13 +176,17 @@ def build_da_context(current_path: dict, tool_results: list[dict]) -> str:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def call_da_agent(current_path: dict, tool_results: list[dict]) -> dict:
+def call_da_agent(
+    current_path: dict,
+    tool_results: list[dict],
+    cross_path_summary: dict | None = None,
+) -> dict:
     """
     Sends path + tool results to DA Agent. Returns parsed response dict.
     Raises ValueError if JSON is malformed.
     Raises Exception for API failures.
     """
-    context = build_da_context(current_path, tool_results)
+    context = build_da_context(current_path, tool_results, cross_path_summary)
 
     response = with_backoff(
         client.messages.create,
@@ -195,14 +223,18 @@ def call_da_agent(current_path: dict, tool_results: list[dict]) -> dict:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def run_da_agent(current_path: dict, tool_results: list[dict]) -> dict:
+def run_da_agent(
+    current_path: dict,
+    tool_results: list[dict],
+    cross_path_summary: dict | None = None,
+) -> dict:
     """
     Full DA gate execution.
     Returns validated findings dict on success.
     Returns error dict on failure — never raises.
     """
     try:
-        raw = call_da_agent(current_path, tool_results)
+        raw = call_da_agent(current_path, tool_results, cross_path_summary)
         findings = DAFindings(**raw)
         return findings.model_dump()
 

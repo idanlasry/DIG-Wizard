@@ -54,8 +54,36 @@ class SynthesisOutput(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 
-def build_synthesis_context(analysis_results: list[dict], bi_findings: dict) -> str:
+def build_synthesis_context(
+    analysis_results: list[dict],
+    bi_findings: dict,
+    cross_path_summary: dict | None = None,
+) -> str:
     parts = []
+
+    if cross_path_summary:
+        parts.append("CROSS-PATH SIGNALS (pre-computed, Python — no LLM):")
+
+        cited = cross_path_summary.get("most_cited_columns", {})
+        if cited:
+            col_str = ", ".join(f"{c} ({cnt}x)" for c, cnt in cited.items())
+            parts.append(f"- Most-cited columns: {col_str}")
+
+        shared_labels = cross_path_summary.get("shared_stat_labels", [])
+        if shared_labels:
+            parts.append(f"- Consistent stat labels across paths: {', '.join(shared_labels)}")
+
+        overlaps = cross_path_summary.get("potential_overlaps", [])
+        if overlaps:
+            parts.append("- Potential contradictions / confirmations to resolve:")
+            for ov in overlaps:
+                entries_str = "; ".join(
+                    f'{e["path"]}: {e["value"]}' for e in ov["occurrences"]
+                )
+                parts.append(f'  • "{ov["label"]}": {entries_str}')
+
+        parts.append("")
+
     parts.append(f"COMPLETED ANALYSIS PATHS: {len(analysis_results)}")
 
     for i, result in enumerate(analysis_results, 1):
@@ -89,8 +117,12 @@ def build_synthesis_context(analysis_results: list[dict], bi_findings: dict) -> 
     return "\n".join(parts)
 
 
-def call_synthesis_agent(analysis_results: list[dict], bi_findings: dict) -> dict:
-    context = build_synthesis_context(analysis_results, bi_findings)
+def call_synthesis_agent(
+    analysis_results: list[dict],
+    bi_findings: dict,
+    cross_path_summary: dict | None = None,
+) -> dict:
+    context = build_synthesis_context(analysis_results, bi_findings, cross_path_summary)
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1000,
@@ -125,9 +157,13 @@ def call_synthesis_agent(analysis_results: list[dict], bi_findings: dict) -> dic
 # ══════════════════════════════════════════════════════════════════════
 
 
-def run_synthesis_agent(analysis_results: list[dict], bi_findings: dict) -> dict:
+def run_synthesis_agent(
+    analysis_results: list[dict],
+    bi_findings: dict,
+    cross_path_summary: dict | None = None,
+) -> dict:
     try:
-        raw = call_synthesis_agent(analysis_results, bi_findings)
+        raw = call_synthesis_agent(analysis_results, bi_findings, cross_path_summary)
         output = SynthesisOutput(**raw)
         return output.model_dump()
     except ValidationError as e:
