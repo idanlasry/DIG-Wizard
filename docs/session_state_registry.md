@@ -27,6 +27,9 @@
 | `total_input_tokens` | Cumulative input tokens across all API calls | app.py startup (`0`) | None — footer display only |
 | `total_output_tokens` | Cumulative output tokens across all API calls | app.py startup (`0`) | None — footer display only |
 | `estimated_cost_usd` | Cumulative estimated USD cost of all API calls | app.py startup (`0.0`) | None — footer display only |
+| `user_interest_choice` | User's pre-research choice: `"none"` (let researcher run freely) or `"yes"` (user has a specific interest) | app.py startup (`"none"`) | None — UI flag only |
+| `user_interest_text` | Free-text interest the user typed before research; empty string if none | app.py startup (`""`) | Researcher Agent — injected as `USER_INTEREST` section in context |
+| `user_interest_path` | Researcher Agent's response to the user's interest — a path dict if feasible, or a dict with a `feasibility_note` if not; `None` if no interest was given | AUDIT stage — Researcher Agent call | None — rendered as a card in RESEARCH stage |
 
 ---
 
@@ -152,6 +155,19 @@ Produced by BI Developer Agent — validated by Pydantic
 | `y_label` | str | Y-axis label |
 | `source_path` | str | Research path title this chart derives from |
 | `explanation` | str | Caption text explaining the chart |
+
+---
+
+### `user_interest_path`
+Produced by Researcher Agent — validated by `UserInterestPath` Pydantic model. `None` if no user interest was provided.
+
+| Key | Type | Description |
+|---|---|---|
+| `title` | str | Short path name (3–6 words) |
+| `question` | str | The business question the user wanted answered |
+| `rationale` | str | 2–4 sentences: what will be checked, why it matters, what insight the tools will surface |
+| `tool_instructions` | list[dict] \| null | Ordered tool calls (2–5), same `{tool, params}` schema as regular paths; `null` when not feasible |
+| `feasibility_note` | str \| null | Explanation of why the dataset or available tools cannot answer the interest; `null` when feasible |
 
 ---
 

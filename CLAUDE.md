@@ -33,7 +33,7 @@ There are no automated tests. Manual testing means uploading a CSV via the Strea
 | [core/switchboard.py](core/switchboard.py) | Validates and dispatches `ToolInstruction` JSON to `TOOL_MAP` functions |
 | [agents/de_agent.py](agents/de_agent.py) | Data Engineer LLM agent — interprets profiler output, returns quality JSON |
 | [agents/pm_agent.py](agents/pm_agent.py) | PM orchestrator agent — gates stage transitions, generates user-facing summaries |
-| [agents/researcher_agent.py](agents/researcher_agent.py) | Researcher LLM agent — generates exactly 5 research paths, each with 2–5 ordered `ToolInstruction` objects |
+| [agents/researcher_agent.py](agents/researcher_agent.py) | Researcher LLM agent — generates 3–5 orthogonal research paths, each with 2–5 ordered `ToolInstruction` objects; also accepts an optional `user_interest` string and appends a `user_interest_path` to the output (feasible path or infeasibility explanation) |
 | [agents/da_agent.py](agents/da_agent.py) | Data Analyst LLM agent — interprets tool results, explains business meaning |
 | [agents/bi_agent.py](agents/bi_agent.py) | BI Developer LLM agent — generates KPIs and Plotly chart configs from findings |
 | [agents/synthesis_agent.py](agents/synthesis_agent.py) | Synthesis LLM agent — cross-path narrative + actionable recommendations |
@@ -57,7 +57,9 @@ Every agent file follows the same block pattern:
 4. **`call_*` function** — hits the Anthropic API, strips markdown fences, parses JSON
 5. **`run_*` gate function** — the only function `app.py` imports; never raises, returns error dict on failure
 
-The Researcher Agent has one additional pattern: `TOOL_SIGNATURES` dict injected into the context prompt so the LLM knows accepted param names per tool, preventing hallucinated params.
+The Researcher Agent has two additional patterns:
+- `TOOL_SIGNATURES` dict injected into the context prompt so the LLM knows accepted param names per tool, preventing hallucinated params.
+- Optional `user_interest` string passed from the UI. When present, a `USER_INTEREST` section is appended to the context and the LLM outputs a `user_interest_path` object alongside the regular paths. The path includes a `rationale` and either `tool_instructions` (feasible) or a `feasibility_note` (not feasible given the dataset/tools). Validated by `UserInterestPath` Pydantic model.
 
 ### LLM models
 
@@ -79,5 +81,7 @@ The Researcher Agent returns `ToolInstruction` objects `{"tool": "<name>", "para
 The project follows a 15-stage build plan detailed in [docs/DIG ANALYTICS CLAUDE.md](docs/DIG%20ANALYTICS%20CLAUDE.md). **Current stage: 10 — DA / Stats Agent.** Stages 1–9 are complete.
 
 Stage 10 multi-path loop support is complete: `pm_summaries` accumulates all PM messages, `analysis_results` accumulates all DA findings, the 3-path cap is enforced in the ANALYSIS nav block, and the PM Agent receives `previous_findings` context for synthesis paragraphs at path N>1. The report panel now has 5 tabs including DA FINDINGS (multi-path) and PM LOG.
+
+**Post-stage-10 addition:** User interest nudge before research. At the end of AUDIT, the user can optionally type a free-text area of interest. The Researcher Agent receives it as a `USER_INTEREST` context section and appends a `user_interest_path` to its output — either a fully planned path (with `rationale` + `tool_instructions`) or an infeasibility note. Stored in `st.session_state.user_interest_path`; displayed as a distinct card at the top of the RESEARCH stage.
 
 Next to build: Stage 11 — BI Developer Agent (Plotly chart config from DA findings).

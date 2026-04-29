@@ -18,6 +18,32 @@ if "ANTHROPIC_API_KEY" not in os.environ:
     os.environ["ANTHROPIC_API_KEY"] = st.secrets.get("ANTHROPIC_API_KEY", "")
 
 
+def read_uploaded_file(file):
+    name = file.name.lower()
+    if name.endswith(".csv"):
+        return pd.read_csv(file), None
+    if name.endswith(".tsv"):
+        return pd.read_csv(file, sep="\t"), None
+    if name.endswith(".json"):
+        df = pd.read_json(file)
+        flat_cols = [
+            c for c in df.columns
+            if not df[c].dropna().apply(lambda x: isinstance(x, (dict, list))).any()
+        ]
+        dropped = set(df.columns) - set(flat_cols)
+        if dropped:
+            st.warning(f"JSON: nested columns dropped (not profileable): {', '.join(dropped)}")
+        return df[flat_cols], None
+    if name.endswith(".parquet"):
+        return pd.read_parquet(file), None
+    if name.endswith((".xlsx", ".xls")):
+        xl = pd.ExcelFile(file)
+        if len(xl.sheet_names) == 1:
+            return xl.parse(xl.sheet_names[0]), None
+        return None, xl.sheet_names
+    raise ValueError(f"Unsupported file type: {file.name}")
+
+
 # ==========================================
 # 1. PAGE CONFIGURATION
 # ==========================================
@@ -144,6 +170,9 @@ if "initialized" not in st.session_state:
     st.session_state.total_input_tokens = 0
     st.session_state.total_output_tokens = 0
     st.session_state.estimated_cost_usd = 0.0
+    st.session_state.user_interest_choice = "none"  # "none" | "yes"
+    st.session_state.user_interest_text = ""
+    st.session_state.user_interest_path = None
 
 print(
     f"[RERUN] Stage: {st.session_state.stage} | "
@@ -503,32 +532,50 @@ with col_main:
                 add_log(f"ERROR: Failed to read demo CSV. {e}", "error")
 
         st.markdown("— or —")
-        uploaded_file = st.file_uploader("UPLOAD CSV FILE", type="csv")
+        uploaded_file = st.file_uploader(
+            "UPLOAD DATA FILE",
+            type=["csv", "tsv", "xlsx", "xls", "json", "parquet"],
+        )
+        st.caption("Accepted formats: CSV · TSV · Excel (.xlsx / .xls) · JSON (flat/records) · Parquet")
 
         if uploaded_file is not None:
             try:
-                df = pd.read_csv(uploaded_file)
-                st.session_state.raw_data = df
-                profile = get_dataset_profile(df)
-                st.session_state.metadata = profile
-                add_log(
-                    f"Profiler: Scan complete — {profile['shape']['rows']} rows × {profile['shape']['cols']} columns.",
-                    "system",
-                )
-                add_log(
-                    f"Profiler: {len(profile['numeric_summary'])} numeric, {len(profile['categorical_summary'])} categorical columns."
-                )
-                add_log(f"Profiler: {profile['duplicate_rows']} duplicate rows found.")
-                st.session_state.stage = "AUDIT"
-                st.session_state.report_view = "metadata"
-                add_log(
-                    f"Data loaded: {len(df)} rows, {len(df.columns)} columns.",
-                    "system",
-                )
-                st.rerun()
+                df, sheet_names = read_uploaded_file(uploaded_file)
+
+                if sheet_names is not None:
+                    chosen_sheet = st.selectbox(
+                        "This workbook has multiple sheets. Select one to load:",
+                        sheet_names,
+                    )
+                    if st.button("Load selected sheet"):
+                        uploaded_file.seek(0)
+                        df = pd.read_excel(uploaded_file, sheet_name=chosen_sheet)
+                    else:
+                        df = None
+
+                if df is not None:
+                    st.session_state.raw_data = df
+                    profile = get_dataset_profile(df)
+                    st.session_state.metadata = profile
+                    add_log(
+                        f"Profiler: Scan complete — {profile['shape']['rows']} rows × {profile['shape']['cols']} columns.",
+                        "system",
+                    )
+                    add_log(
+                        f"Profiler: {len(profile['numeric_summary'])} numeric, {len(profile['categorical_summary'])} categorical columns."
+                    )
+                    add_log(f"Profiler: {profile['duplicate_rows']} duplicate rows found.")
+                    st.session_state.stage = "AUDIT"
+                    st.session_state.report_view = "metadata"
+                    add_log(
+                        f"Data loaded: {len(df)} rows, {len(df.columns)} columns.",
+                        "system",
+                    )
+                    st.rerun()
+
             except Exception as e:
-                st.error(f"Error loading file: {e}")
-                add_log(f"ERROR: Failed to read CSV. {e}", "error")
+                st.error(f"Could not read file '{uploaded_file.name}': {e}")
+                add_log(f"ERROR: Failed to read uploaded file. {e}", "error")
 
     # ── STAGE: AUDIT ───────────────────────────────────────────────────
     elif st.session_state.stage == "AUDIT":
@@ -632,14 +679,54 @@ with col_main:
             st.markdown("---")
 
             if st.session_state.pm_ready:
+                st.markdown("---")
+                st.markdown("##### 🧭 Next step: Research Questions")
+                st.caption(
+                    "The Research Analyst will explore your dataset and propose data paths to investigate. "
+                    "Anything on your mind before we dive in?"
+                )
+
+                interest_choice = st.radio(
+                    "Steer the researcher?",
+                    options=["none", "yes"],
+                    format_func=lambda x: {
+                        "none": "No, nothing on my mind — let the researcher do his job",
+                        "yes": "Oh yeah, I'm actually interested in…",
+                    }[x],
+                    key="user_interest_choice",
+                    label_visibility="collapsed",
+                )
+
+                if interest_choice == "yes":
+                    st.text_area(
+                        "What are you curious about?",
+                        placeholder=(
+                            "e.g. 'I want to know if premium customers churn less' or "
+                            "'Does geography affect purchase frequency?'"
+                        ),
+                        key="user_interest_text",
+                        height=90,
+                    )
+
                 if st.button("🚀 Generate Research Questions"):
+                    user_interest = None
+                    if st.session_state.get("user_interest_choice") == "yes":
+                        raw_text = st.session_state.get("user_interest_text", "").strip()
+                        user_interest = raw_text if raw_text else None
+
                     add_log(
                         "Research Analyst: Generating research questions...", "system"
                     )
+                    if user_interest:
+                        add_log(
+                            f'Research Analyst: User interest noted — "{user_interest}"',
+                            "system",
+                        )
                     st.session_state.api_call_count += 1
                     result = run_researcher_agent(
                         metadata=st.session_state.metadata,
                         de_findings=st.session_state.de_findings,
+                        user_interest=user_interest,
                     )
                     if "error" in result:
                         add_log(f"Research Analyst Error: {result['detail']}", "error")
@@ -651,6 +738,9 @@ with col_main:
                         st.session_state.research_paths = result["paths"]
                         pm_result = result.get("primary_metric")
                         st.session_state.primary_metric = pm_result
+                        st.session_state.user_interest_path = result.get(
+                            "user_interest_path"
+                        )
                         add_log(
                             f"Research Analyst: {len(result['paths'])} research questions ready.",
                             "system",
@@ -665,6 +755,18 @@ with col_main:
                                 "Research Analyst: No primary metric detected (no binary column found).",
                                 "system",
                             )
+                        if st.session_state.user_interest_path:
+                            uip = st.session_state.user_interest_path
+                            if uip.get("tool_instructions"):
+                                add_log(
+                                    f'Research Analyst: User interest path created — "{uip["title"]}"',
+                                    "system",
+                                )
+                            else:
+                                add_log(
+                                    f'Research Analyst: User interest noted but not feasible with current data — "{uip["title"]}"',
+                                    "system",
+                                )
                         st.session_state.stage = "RESEARCH"
                         st.rerun()
             else:
@@ -676,13 +778,96 @@ with col_main:
     elif st.session_state.stage == "RESEARCH":
         st.markdown("##### 🔬 STEP 03: SELECT RESEARCH PATHS")
 
-        # ── PATH SELECTION UI ─────────────────────────────────────────────
-        paths = st.session_state.research_paths
-        st.markdown("**Select a research path to analyze:**")
-
         used_titles = {
             r["path"]["title"] for r in st.session_state.get("analysis_results", [])
         }
+
+        # ── USER INTEREST PATH ────────────────────────────────────────────
+        uip = st.session_state.get("user_interest_path")
+        if uip:
+            feasible = bool(uip.get("tool_instructions"))
+            border_color = "#00ff9f" if feasible else "#ff6b6b"
+            icon = "🎯" if feasible else "🚧"
+            uip_already_used = uip["title"] in used_titles
+
+            st.caption("🎯 Your requested path")
+            with st.container(border=True):
+                if uip_already_used:
+                    st.markdown(
+                        "<div style='opacity:0.35; filter:blur(1.5px); pointer-events:none;'>",
+                        unsafe_allow_html=True,
+                    )
+                title_color = "#00ff9f" if feasible else "#ff6b6b"
+                st.markdown(
+                    f"<span style='color:{title_color}'><b>{icon} Your question: {uip['title']}</b></span>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(uip["question"])
+                if feasible:
+                    st.markdown(uip["rationale"])
+                    tool_names = " → ".join(t["tool"] for t in uip["tool_instructions"])
+                    st.markdown(
+                        f"<span style='color:#888; font-size:0.8rem; font-family:monospace'>"
+                        f"Tools: {tool_names}</span>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"<span style='color:#ff6b6b; font-size:0.85rem;'>"
+                        f"⚠ {uip['feasibility_note']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                if uip_already_used:
+                    st.markdown("</div>", unsafe_allow_html=True)
+                if feasible:
+                    if st.button(
+                        "▶ Analyze This Path",
+                        key="path_user_interest",
+                        disabled=uip_already_used,
+                    ):
+                        clean_path = {
+                            "title": uip["title"],
+                            "question": uip["question"],
+                            "tool_instructions": uip["tool_instructions"],
+                        }
+                        st.session_state.current_path = clean_path
+                        add_log(f"Path selected: {clean_path['title']}", "system")
+                        st.session_state.api_call_count += 1
+                        pm_response = run_pm_gate(
+                            current_stage="RESEARCH",
+                            metadata=st.session_state.metadata,
+                            de_findings=st.session_state.de_findings,
+                            selected_path=clean_path,
+                            previous_findings=st.session_state.analysis_results or None,
+                        )
+                        if "error" in pm_response:
+                            add_log(
+                                f"Product Manager Error: {pm_response['detail']}", "error"
+                            )
+                            print(f"[ERROR] PM Agent: {pm_response['detail']}")
+                            st.error(
+                                "⚠️ Product Manager step failed. Try again or check the activity log."
+                            )
+                        else:
+                            add_log(
+                                f"Product Manager: {pm_response['summary_for_log']}",
+                                "system",
+                            )
+                            st.session_state.pm_summaries.append(
+                                pm_response["user_message"]
+                            )
+                            st.session_state.stage = "ANALYSIS"
+                            st.session_state.report_view = "pm_summary"
+                            st.rerun()
+                else:
+                    st.button(
+                        "▶ Analyze This Path", key="path_user_interest", disabled=True
+                    )
+                    st.caption("Researcher could not build a path with available tools.")
+
+        # ── PATH SELECTION UI ─────────────────────────────────────────────
+        paths = st.session_state.research_paths
+        st.caption("Researcher-generated paths")
 
         for i, path in enumerate(paths):
             already_used = path["title"] in used_titles

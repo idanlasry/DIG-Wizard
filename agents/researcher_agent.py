@@ -1,7 +1,7 @@
 # researcher_agent.py
 import json
 from anthropic import Anthropic
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 import streamlit as st
 from utils.utils import with_backoff, calculate_cost
 
@@ -53,7 +53,8 @@ Use exactly this structure:
         }
       ]
     }
-  ]
+  ],
+  "user_interest_path": null
 }
 
 If no binary outcome column exists, use: "primary_metric": null
@@ -68,6 +69,21 @@ PATH ORTHOGONALITY — this is the most important constraint:
 - Each path must cover a different business dimension (e.g. churn drivers, financial risk, geographic patterns, demographic segmentation, product behaviour). No two paths may address the same business question from a different angle.
 - Every path must use at least one tool that does not appear in any other path. A path whose entire tool list is a subset of another path's tools is forbidden.
 - If you cannot find enough orthogonal paths given the available columns, reduce the count rather than returning overlapping paths.
+
+USER INTEREST PATH (conditional):
+If a USER_INTEREST section appears in the context, populate "user_interest_path" instead of leaving it null.
+This path is IN ADDITION to the required 3–5 paths above — do not replace a regular path with it.
+Think carefully before filling it in:
+
+  FEASIBLE (the dataset has relevant columns AND the available tools can answer it):
+    → Set "title" (3–6 words), "question" (one clear business question),
+      "rationale" (2–4 sentences: what you'll check, why it matters, what insight the tools will surface),
+      "tool_instructions" (2–5 tools, ordered logically), and leave "feasibility_note" as null.
+
+  NOT FEASIBLE (no relevant columns, no applicable tools, or the question is outside what the data can answer):
+    → Set "title", "question", "rationale" (explain what the user was asking about),
+      "feasibility_note" (explain specifically why the dataset/tools cannot answer it),
+      and leave "tool_instructions" as null.
 
 - Never add fields outside this schema.
 - Never return text outside the JSON object.
@@ -127,9 +143,26 @@ class PrimaryMetric(BaseModel):
     rate_pct: float  # mean * 100
 
 
+class UserInterestPath(BaseModel):
+    title: str
+    question: str
+    rationale: str  # what this path checks, why it matters, what insight it gives
+    tool_instructions: list[ResearchToolInstruction] | None = None
+    feasibility_note: str | None = None  # set when dataset/tools can't answer the interest
+
+    @model_validator(mode="after")
+    def must_have_tools_or_note(self):
+        if not self.tool_instructions and not self.feasibility_note:
+            raise ValueError(
+                "UserInterestPath must have either tool_instructions or feasibility_note"
+            )
+        return self
+
+
 class ResearcherOutput(BaseModel):
     primary_metric: PrimaryMetric | None = None
     paths: list[ResearchPath]
+    user_interest_path: UserInterestPath | None = None
 
     @field_validator("paths")
     @classmethod
@@ -162,7 +195,9 @@ TOOL_SIGNATURES = {
 }
 
 
-def build_researcher_context(metadata: dict, de_findings: dict) -> str:
+def build_researcher_context(
+    metadata: dict, de_findings: dict, user_interest: str | None = None
+) -> str:
     """
     Builds the user-turn message for the Researcher Agent.
     Includes: dataset shape, column list, numeric/categorical summaries,
@@ -220,6 +255,14 @@ def build_researcher_context(metadata: dict, de_findings: dict) -> str:
     tool_lines = [f"  - {name}: {sig}" for name, sig in TOOL_SIGNATURES.items()]
     parts.append("AVAILABLE_TOOLS:\n" + "\n".join(tool_lines))
 
+    if user_interest:
+        parts.append(
+            f"--- USER INTEREST ---\n"
+            f'The user has flagged a specific area they want explored:\n'
+            f'"{user_interest}"\n'
+            f"Reflect on this in your user_interest_path output object (see instructions above)."
+        )
+
     parts.append(
         "Based on the above, generate 3–5 orthogonal research paths as a JSON object."
     )
@@ -235,14 +278,16 @@ def build_researcher_context(metadata: dict, de_findings: dict) -> str:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def call_researcher_agent(metadata: dict, de_findings: dict) -> dict:
+def call_researcher_agent(
+    metadata: dict, de_findings: dict, user_interest: str | None = None
+) -> dict:
     """
     Sends profiler metadata + DE findings to the Researcher Agent.
     Returns parsed response dict.
     Raises ValueError if JSON is malformed.
     Raises Exception for API failures.
     """
-    context = build_researcher_context(metadata, de_findings)
+    context = build_researcher_context(metadata, de_findings, user_interest)
 
     response = with_backoff(
         client.messages.create,
@@ -310,15 +355,17 @@ def deduplicate_paths(paths: list[dict]) -> list[dict]:
 # ══════════════════════════════════════════════════════════════════════
 
 
-def run_researcher_agent(metadata: dict, de_findings: dict) -> dict:
+def run_researcher_agent(
+    metadata: dict, de_findings: dict, user_interest: str | None = None
+) -> dict:
     """
     Full Researcher gate execution.
     Returns validated output dict on success:
-      {"paths": [ {title, question, tool_instructions: [{tool, params}]} x5 ]}
+      {"paths": [...], "primary_metric": ..., "user_interest_path": ...}
     Returns error dict on failure — never raises.
     """
     try:
-        raw = call_researcher_agent(metadata, de_findings)
+        raw = call_researcher_agent(metadata, de_findings, user_interest)
         validated = ResearcherOutput(**raw)
         result = validated.model_dump()
         result["paths"] = deduplicate_paths(result["paths"])

@@ -16,7 +16,7 @@ client = Anthropic()
 DE_SYSTEM_PROMPT = """
 You are a senior data engineer reviewing a dataset for analysis readiness.
 
-When the user uploads CSV data, analyze it and respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks. Just the raw JSON.
+When the user uploads tabular data, analyze it and respond with ONLY a valid JSON object. No explanation, no markdown, no code blocks. Just the raw JSON.
 
 Use exactly this structure:
 
