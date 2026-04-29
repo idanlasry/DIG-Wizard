@@ -18,7 +18,7 @@ and a BI summary with KPIs and chart explanations.
 Write a 3-4 sentence executive narrative synthesizing the most important cross-path insight —
 what the data reveals as a whole, not just per-path summaries.
 
-Then return 3-5 concrete business recommendations. Each recommendation must be:
+Then return 2-4 concrete business recommendations. Each recommendation must be:
 - Actionable (a decision or action a business can take)
 - Specific to the actual data provided (no generic advice)
 - Written in plain executive language
@@ -43,9 +43,9 @@ class SynthesisOutput(BaseModel):
 
     @field_validator("recommendations")
     @classmethod
-    def must_have_three_to_five(cls, v):
-        if not (3 <= len(v) <= 5):
-            raise ValueError(f"recommendations must have 3-5 items, got {len(v)}")
+    def must_have_two_to_four(cls, v):
+        if not (2 <= len(v) <= 4):
+            raise ValueError(f"recommendations must have 2-4 items, got {len(v)}")
         return v
 
 

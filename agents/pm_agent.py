@@ -21,6 +21,7 @@ class PMResponse(BaseModel):
             return v.strip().lower() == "true"
         return v
 
+
 # ══════════════════════════════════════════════════════════════════════
 # BLOCK 1 — SYSTEM PROMPT
 # The PM Agent's identity and rules. Injected on every call.
@@ -42,10 +43,6 @@ STAGE RULES:
 - ANALYSIS → ANALYSIS: when user selects a new path (loop continues)
 - ANALYSIS → DASHBOARD: when user confirms they are done with research paths
 
-At DASHBOARD gate: you receive all completed analysis paths as PREVIOUS FINDINGS.
-Write user_message as a 2-3 sentence executive synthesis — what the data collectively shows,
-the most important cross-path business insight, and what decision the stakeholder should act on.
-Set ready_to_proceed to true. Set stage_transition to null.
 
 At AUDIT gate: you will receive COLUMN_NAMES from the dataset. Use them to infer the
 domain, key entities, and what types of analysis this data is suited for. Write this
@@ -60,6 +57,11 @@ Tell the analyst what to expect — which tools will run and what angle they cov
 When PREVIOUS FINDINGS is present in context, open user_message with a one-paragraph
 synthesis of what's been found so far, then introduce the new path as "building on this."
 Keep it tight. This becomes the living report header for this analysis cycle.
+
+At DASHBOARD gate: you receive all completed analysis paths as PREVIOUS FINDINGS.
+Write user_message as a 2-3 sentence executive synthesis — what the data collectively shows,
+the most important cross-path business insight, and what decision the stakeholder should act on.
+Set ready_to_proceed to true. Set stage_transition to null.
 
 Your tone: professional, direct, cyberpunk. Short sentences. No fluff.
 Always respond with ONLY a valid JSON object. No markdown. No explanation.
@@ -200,6 +202,7 @@ def call_pm_agent(context_message: str) -> dict:
 # Builds context, calls PM, validates response shape, returns clean dict.
 # This is the only function app.py needs to import.
 # ══════════════════════════════════════════════════════════════════════
+
 
 def run_pm_gate(
     current_stage: str,
