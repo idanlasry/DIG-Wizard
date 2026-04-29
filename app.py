@@ -785,9 +785,20 @@ with col_main:
         # ── USER INTEREST PATH ────────────────────────────────────────────
         uip = st.session_state.get("user_interest_path")
         if uip:
-            feasible = bool(uip.get("tool_instructions"))
-            border_color = "#00ff9f" if feasible else "#ff6b6b"
-            icon = "🎯" if feasible else "🚧"
+            has_tools = bool(uip.get("tool_instructions"))
+            has_limit = bool(uip.get("limitations_note"))
+            if has_tools and not has_limit:
+                uip_state = "feasible"
+                icon = "🎯"
+                title_color = "#00ff9f"
+            elif has_tools and has_limit:
+                uip_state = "partial"
+                icon = "⚡"
+                title_color = "#ffcc00"
+            else:
+                uip_state = "infeasible"
+                icon = "🚧"
+                title_color = "#ff6b6b"
             uip_already_used = uip["title"] in used_titles
 
             st.caption("🎯 Your requested path")
@@ -797,13 +808,12 @@ with col_main:
                         "<div style='opacity:0.35; filter:blur(1.5px); pointer-events:none;'>",
                         unsafe_allow_html=True,
                     )
-                title_color = "#00ff9f" if feasible else "#ff6b6b"
                 st.markdown(
                     f"<span style='color:{title_color}'><b>{icon} Your question: {uip['title']}</b></span>",
                     unsafe_allow_html=True,
                 )
                 st.caption(uip["question"])
-                if feasible:
+                if uip_state in ("feasible", "partial"):
                     st.markdown(uip["rationale"])
                     tool_names = " → ".join(t["tool"] for t in uip["tool_instructions"])
                     st.markdown(
@@ -811,7 +821,13 @@ with col_main:
                         f"Tools: {tool_names}</span>",
                         unsafe_allow_html=True,
                     )
-                else:
+                if uip_state == "partial":
+                    st.markdown(
+                        f"<span style='color:#ffcc00; font-size:0.85rem;'>"
+                        f"⚠ Closest approximation — {uip['limitations_note']}</span>",
+                        unsafe_allow_html=True,
+                    )
+                if uip_state == "infeasible":
                     st.markdown(
                         f"<span style='color:#ff6b6b; font-size:0.85rem;'>"
                         f"⚠ {uip['feasibility_note']}</span>",
@@ -819,7 +835,7 @@ with col_main:
                     )
                 if uip_already_used:
                     st.markdown("</div>", unsafe_allow_html=True)
-                if feasible:
+                if uip_state in ("feasible", "partial"):
                     if st.button(
                         "▶ Analyze This Path",
                         key="path_user_interest",
@@ -863,7 +879,7 @@ with col_main:
                     st.button(
                         "▶ Analyze This Path", key="path_user_interest", disabled=True
                     )
-                    st.caption("Researcher could not build a path with available tools.")
+                    st.caption("No tool path available for this question.")
 
         # ── PATH SELECTION UI ─────────────────────────────────────────────
         paths = st.session_state.research_paths

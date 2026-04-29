@@ -73,17 +73,43 @@ PATH ORTHOGONALITY — this is the most important constraint:
 USER INTEREST PATH (conditional):
 If a USER_INTEREST section appears in the context, populate "user_interest_path" instead of leaving it null.
 This path is IN ADDITION to the required 3–5 paths above — do not replace a regular path with it.
-Think carefully before filling it in:
+Think carefully about which of the three cases applies:
 
-  FEASIBLE (the dataset has relevant columns AND the available tools can answer it):
+  FEASIBLE (the dataset has relevant columns AND the available tools can fully answer it):
     → Set "title" (3–6 words), "question" (one clear business question),
       "rationale" (2–4 sentences: what you'll check, why it matters, what insight the tools will surface),
-      "tool_instructions" (2–5 tools, ordered logically), and leave "feasibility_note" as null.
+      "tool_instructions" (2–5 tools, ordered logically).
+      Leave "feasibility_note" and "limitations_note" as null.
 
-  NOT FEASIBLE (no relevant columns, no applicable tools, or the question is outside what the data can answer):
+  PARTIALLY FEASIBLE (the user's intent requires a method the available tools cannot perform —
+  such as statistical tests, regression, or ML — but one or more tools can provide meaningful
+  proxy evidence toward the answer):
+    → Set "title", "question",
+      "rationale" (2–4 sentences describing the closest approach you'll take and why it's useful),
+      "tool_instructions" (2–5 tools that address the question as closely as possible),
+      "limitations_note" (1–2 sentences: what the user asked for that the tools cannot deliver,
+      and what the results will vs. won't confirm).
+      Leave "feasibility_note" as null.
+
+    Common partial patterns:
+    - Statistical significance (chi-square, t-test, ANOVA, p-values) →
+        use segment_comparison + cross_tab for descriptive comparison;
+        limitations_note should note that results show magnitude of difference but cannot
+        confirm statistical significance — no p-value or hypothesis test is available.
+    - Regression / predictive modeling →
+        use correlation_matrix + segment_comparison;
+        limitations_note should note that results reveal correlations and segment patterns
+        but cannot establish causation or produce a predictive model.
+    - Rate-of-change or acceleration →
+        use time_series_trend + rolling_average;
+        limitations_note should note that results show trend direction and smoothed values
+        but do not compute statistical rate-of-change or acceleration.
+
+  NOT FEASIBLE (no relevant columns, no applicable tools, or the question is entirely outside
+  what the dataset can answer):
     → Set "title", "question", "rationale" (explain what the user was asking about),
-      "feasibility_note" (explain specifically why the dataset/tools cannot answer it),
-      and leave "tool_instructions" as null.
+      "feasibility_note" (explain specifically why the dataset/tools cannot answer it).
+      Leave "tool_instructions" and "limitations_note" as null.
 
 - Never add fields outside this schema.
 - Never return text outside the JSON object.
@@ -148,14 +174,24 @@ class UserInterestPath(BaseModel):
     question: str
     rationale: str  # what this path checks, why it matters, what insight it gives
     tool_instructions: list[ResearchToolInstruction] | None = None
-    feasibility_note: str | None = None  # set when dataset/tools can't answer the interest
+    feasibility_note: str | None = None   # fully infeasible: no applicable tools or columns
+    limitations_note: str | None = None   # partial: set alongside tool_instructions to flag gaps
 
     @model_validator(mode="after")
     def must_have_tools_or_note(self):
-        if not self.tool_instructions and not self.feasibility_note:
+        has_tools = bool(self.tool_instructions)
+        has_infeasible = bool(self.feasibility_note)
+        has_limitations = bool(self.limitations_note)
+        if not has_tools and not has_infeasible:
             raise ValueError(
                 "UserInterestPath must have either tool_instructions or feasibility_note"
             )
+        if has_infeasible and has_tools:
+            raise ValueError(
+                "UserInterestPath cannot have both feasibility_note and tool_instructions"
+            )
+        if has_limitations and not has_tools:
+            raise ValueError("limitations_note requires tool_instructions to be set")
         return self
 
 
