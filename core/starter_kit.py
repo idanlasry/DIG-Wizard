@@ -76,14 +76,40 @@ def time_series_trend(df: pd.DataFrame, date_col: str, value_col: str) -> dict:
     }
 
 
+_SEGMENT_UNIQUE_THRESHOLD = 20  # above this, auto-bin continuous numerics
+_QUINTILE_LABELS = ["Bottom 20%", "Lower-Mid 20%", "Middle 20%", "Upper-Mid 20%", "Top 20%"]
+
+
 def segment_comparison(df: pd.DataFrame, group_col: str, value_col: str) -> dict:
     """
     Compares a numeric value across segments of a categorical column.
-    Returns mean, count, and share per segment.
+    Auto-bins continuous numeric group columns into 5 percentile ranges when
+    unique value count exceeds threshold, preventing token explosion.
     """
-    df = df.dropna(subset=[group_col, value_col])
+    df = df.dropna(subset=[group_col, value_col]).copy()
+
+    binning_note = None
+    n_unique = df[group_col].nunique()
+
+    if pd.api.types.is_numeric_dtype(df[group_col]) and n_unique > _SEGMENT_UNIQUE_THRESHOLD:
+        try:
+            binned_col, bin_edges = pd.qcut(
+                df[group_col], q=5, labels=_QUINTILE_LABELS, retbins=True, duplicates="drop"
+            )
+            df[group_col] = binned_col
+            ranges = [f"{label}: {bin_edges[i]:.0f}–{bin_edges[i+1]:.0f}"
+                      for i, label in enumerate(_QUINTILE_LABELS[:len(bin_edges)-1])]
+            binning_note = f"'{group_col}' had {n_unique} unique values — auto-binned into percentile ranges: {'; '.join(ranges)}"
+        except Exception:
+            # Fallback: keep only the 20 most common values
+            top_vals = df[group_col].value_counts().nlargest(20).index
+            df = df[df[group_col].isin(top_vals)]
+            binning_note = f"'{group_col}' had {n_unique} unique values — limited to top 20 most frequent."
+
     grouped = (
-        df.groupby(group_col)[value_col].agg(["mean", "count", "std"]).reset_index()
+        df.groupby(group_col, observed=True)[value_col]
+        .agg(["mean", "count", "std"])
+        .reset_index()
     )
     grouped.columns = ["segment", "mean", "count", "std"]
     grouped = grouped.sort_values("mean", ascending=False)
@@ -91,7 +117,7 @@ def segment_comparison(df: pd.DataFrame, group_col: str, value_col: str) -> dict
     total = grouped["count"].sum()
     grouped["share_pct"] = (grouped["count"] / total * 100).round(2)
 
-    return {
+    result = {
         "tool": "segment_comparison",
         "group_col": group_col,
         "value_col": value_col,
@@ -106,6 +132,9 @@ def segment_comparison(df: pd.DataFrame, group_col: str, value_col: str) -> dict
             for _, row in grouped.iterrows()
         ],
     }
+    if binning_note:
+        result["binning_note"] = binning_note
+    return result
 
 
 def distribution_analysis(

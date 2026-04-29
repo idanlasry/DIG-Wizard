@@ -115,6 +115,16 @@ class DAFindings(BaseModel):
 # ══════════════════════════════════════════════════════════════════════
 
 
+_MAX_RESULT_CHARS = 8_000  # per tool result; keeps total prompt well under 200k tokens
+
+
+def _truncate_result(result: dict) -> str:
+    serialized = json.dumps(result, indent=2)
+    if len(serialized) <= _MAX_RESULT_CHARS:
+        return serialized
+    return serialized[:_MAX_RESULT_CHARS] + f"\n... [truncated — {len(serialized) - _MAX_RESULT_CHARS} chars omitted]"
+
+
 def build_da_context(current_path: dict, tool_results: list[dict]) -> str:
     """
     Builds the user-turn message for the DA Agent.
@@ -130,7 +140,7 @@ def build_da_context(current_path: dict, tool_results: list[dict]) -> str:
     for i, result in enumerate(tool_results, 1):
         tool_name = result.get("tool", f"tool_{i}")
         parts.append(f"\n--- Tool {i}: {tool_name} ---")
-        parts.append(json.dumps(result, indent=2))
+        parts.append(_truncate_result(result))
 
     parts.append("\nBased on the above, generate your DA findings JSON.")
 
