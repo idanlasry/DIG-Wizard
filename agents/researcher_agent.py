@@ -59,12 +59,16 @@ Use exactly this structure:
 If no binary outcome column exists, use: "primary_metric": null
 
 Rules:
-- Return exactly 5 paths. No more, no less.
+- Return between 3 and 5 paths. If the dataset does not support 5 truly distinct paths, return 3 or 4 — never pad with redundant ones.
 - Each path must have between 2 and 5 tool_instructions.
 - tool names must exactly match one of the AVAILABLE_TOOLS provided.
 - params must match what each tool actually accepts — do not invent param names.
-- Vary the tools across paths — don't reuse the same tools in every path.
-- Make each question distinct — no overlapping angles.
+
+PATH ORTHOGONALITY — this is the most important constraint:
+- Each path must cover a different business dimension (e.g. churn drivers, financial risk, geographic patterns, demographic segmentation, product behaviour). No two paths may address the same business question from a different angle.
+- Every path must use at least one tool that does not appear in any other path. A path whose entire tool list is a subset of another path's tools is forbidden.
+- If you cannot find enough orthogonal paths given the available columns, reduce the count rather than returning overlapping paths.
+
 - Never add fields outside this schema.
 - Never return text outside the JSON object.
 """
@@ -129,9 +133,9 @@ class ResearcherOutput(BaseModel):
 
     @field_validator("paths")
     @classmethod
-    def must_have_five_paths(cls, v):
-        if len(v) != 5:
-            raise ValueError(f"Researcher must return exactly 5 paths, got {len(v)}")
+    def must_have_three_to_five_paths(cls, v):
+        if not (3 <= len(v) <= 5):
+            raise ValueError(f"Researcher must return 3–5 paths, got {len(v)}")
         return v
 
 
@@ -217,7 +221,7 @@ def build_researcher_context(metadata: dict, de_findings: dict) -> str:
     parts.append("AVAILABLE_TOOLS:\n" + "\n".join(tool_lines))
 
     parts.append(
-        "Based on the above, generate exactly 5 research paths as a JSON object."
+        "Based on the above, generate 3–5 orthogonal research paths as a JSON object."
     )
 
     return "\n\n".join(parts)
@@ -272,6 +276,33 @@ def call_researcher_agent(metadata: dict, de_findings: dict) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════
+# BLOCK 4b — DEDUPLICATION HELPER
+# Removes paths whose entire tool set is a subset of other paths' tools.
+# Stops when only 3 paths remain so we never drop below the minimum.
+# ══════════════════════════════════════════════════════════════════════
+
+
+def deduplicate_paths(paths: list[dict]) -> list[dict]:
+    kept = list(paths)
+    changed = True
+    while changed and len(kept) > 3:
+        changed = False
+        for i, path in enumerate(kept):
+            path_tools = {ti["tool"] for ti in path["tool_instructions"]}
+            other_tools = {
+                ti["tool"]
+                for j, p in enumerate(kept)
+                if j != i
+                for ti in p["tool_instructions"]
+            }
+            if not (path_tools - other_tools):  # no unique tools → redundant
+                kept.pop(i)
+                changed = True
+                break
+    return kept
+
+
+# ══════════════════════════════════════════════════════════════════════
 # BLOCK 5 — GATE RUNNER
 # High-level function called from app.py.
 # Calls Researcher → validates with Pydantic → returns clean dict.
@@ -289,7 +320,9 @@ def run_researcher_agent(metadata: dict, de_findings: dict) -> dict:
     try:
         raw = call_researcher_agent(metadata, de_findings)
         validated = ResearcherOutput(**raw)
-        return validated.model_dump()
+        result = validated.model_dump()
+        result["paths"] = deduplicate_paths(result["paths"])
+        return result
 
     except ValidationError as e:
         return {"error": "validation_failed", "detail": str(e)}
