@@ -138,7 +138,7 @@ st.markdown(
 # ==========================================
 if "initialized" not in st.session_state:
     st.session_state.initialized = True
-    st.session_state.stage = "START"
+    st.session_state.stage = "WELCOME"
     st.session_state.raw_data = None
     st.session_state.metadata = None
     st.session_state.de_findings = None
@@ -485,23 +485,49 @@ with col_terminal:
 with col_main:
     st.markdown("### 🕹️ COMMAND CENTER")
 
-    # ── STAGE: START ───────────────────────────────────────────────────
-    if st.session_state.stage == "START":
+    # ── STAGE: WELCOME ─────────────────────────────────────────────────
+    if st.session_state.stage == "WELCOME":
         st.markdown(
             """
-<div style='border:1px solid #00ff9f33; border-radius:6px; padding:12px 16px; margin-bottom:16px; background:rgba(0,255,159,0.04)'>
-<div style='color:#00ff9f; font-size:0.75rem; font-family:monospace; letter-spacing:1px; margin-bottom:8px'>HOW IT WORKS</div>
-<div style='font-size:0.82rem; line-height:2; font-family:monospace; color:#ccc'>
-🔧 <b style='color:#fff'>Data Engineer</b> — Reviews your data quality and readiness<br>
-🔬 <b style='color:#fff'>Research Analyst</b> — Suggests research questions to explore<br>
-📊 <b style='color:#fff'>Data Analyst</b> — Analyzes each research question in depth<br>
-📈 <b style='color:#fff'>BI Developer</b> — Builds your final executive dashboard<br>
-🤝 <b style='color:#00ff9f'>Product Manager</b> — Guides and summarizes every step
+<div style='border:1px solid #00ff9f33; border-radius:6px; padding:20px 24px; margin-bottom:16px; background:rgba(0,255,159,0.04)'>
+<div style='color:#00ff9f; font-size:0.75rem; font-family:monospace; letter-spacing:1px; margin-bottom:12px'>WELCOME</div>
+<div style='font-size:0.95rem; line-height:1.7; font-family:monospace; color:#fff; margin-bottom:8px'>
+Hello, fellow analyst! 👋
+</div>
+<div style='font-size:0.83rem; line-height:1.8; font-family:monospace; color:#ccc'>
+<b style='color:#fff'>DIG</b> is an AI-powered data analysis platform built for you — no SQL, no code, just answers.<br>
+Upload any data file and a team of specialized AI agents will guide you from raw data to executive insights.
+</div>
+</div>
+
+<div style='border:1px solid #00ff9f33; border-radius:6px; padding:16px 20px; margin-bottom:16px; background:rgba(0,255,159,0.03)'>
+<div style='color:#00ff9f; font-size:0.75rem; font-family:monospace; letter-spacing:1px; margin-bottom:12px'>THE DIG FRAMEWORK</div>
+<div style='font-size:0.83rem; line-height:2.2; font-family:monospace; color:#ccc'>
+<span style='color:#00ff9f; font-size:1rem; font-weight:bold'>D</span> &nbsp;<b style='color:#fff'>Description</b> &nbsp;—&nbsp; What is the data? &nbsp;<span style='color:#666'>Schema · Quality · Outliers</span><br>
+<span style='color:#00ff9f; font-size:1rem; font-weight:bold'>I</span> &nbsp;<b style='color:#fff'>Introspection</b> &nbsp;—&nbsp; What does it mean? &nbsp;<span style='color:#666'>Patterns · Correlations · Trends</span><br>
+<span style='color:#00ff9f; font-size:1rem; font-weight:bold'>G</span> &nbsp;<b style='color:#fff'>Goal Setting</b> &nbsp;—&nbsp; What should we do? &nbsp;<span style='color:#666'>KPIs · Strategy · Visualizations</span>
+</div>
+</div>
+
+<div style='border:1px solid #00ff9f33; border-radius:6px; padding:16px 20px; margin-bottom:20px; background:rgba(0,255,159,0.03)'>
+<div style='color:#00ff9f; font-size:0.75rem; font-family:monospace; letter-spacing:1px; margin-bottom:12px'>HOW IT WORKS</div>
+<div style='font-size:0.83rem; line-height:2.2; font-family:monospace; color:#ccc'>
+🔧 <b style='color:#fff'>Data Engineer</b> &nbsp;— Reviews your data quality and readiness<br>
+🔬 <b style='color:#fff'>Research Analyst</b> &nbsp;— Suggests research questions to explore<br>
+📊 <b style='color:#fff'>Data Analyst</b> &nbsp;— Analyzes each research question in depth<br>
+📈 <b style='color:#fff'>BI Developer</b> &nbsp;— Builds your final executive dashboard<br>
+🤝 <b style='color:#00ff9f'>Product Manager</b> &nbsp;— Guides and summarizes every step
 </div>
 </div>
 """,
             unsafe_allow_html=True,
         )
+        if st.button("🚀 Ready to Analyze Your Data", use_container_width=True):
+            st.session_state.stage = "START"
+            st.rerun()
+
+    # ── STAGE: START ───────────────────────────────────────────────────
+    elif st.session_state.stage == "START":
         st.markdown("##### 📥 STEP 01: DATA INTAKE")
 
         if st.button(
