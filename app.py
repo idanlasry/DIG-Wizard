@@ -1021,10 +1021,16 @@ Upload any data file and a team of specialized AI agents will guide you from raw
                         # Data Analyst interprets all results
                         add_log("Data Analyst: Interpreting results...", "system")
                         st.session_state.api_call_count += 1
+                        column_skewness = {
+                            col: stats["skewness"]
+                            for col, stats in st.session_state.metadata.get("numeric_summary", {}).items()
+                            if "skewness" in stats
+                        }
                         da_response = run_da_agent(
                             path,
                             tool_results,
                             cross_path_summary=st.session_state.cross_path_summary,
+                            column_skewness=column_skewness,
                         )
 
                         if "error" in da_response:

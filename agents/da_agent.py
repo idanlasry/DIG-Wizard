@@ -54,6 +54,11 @@ Rules:
 - Never invent numbers not present in the tool results.
 - Never add fields outside this schema.
 - Never return text outside the JSON object.
+- A COLUMN_SKEWNESS section may appear in your context mapping column names to skewness values.
+  When interpreting a column whose |skewness| > 1, prefer reporting p50/p75/p95 over the mean.
+- When a column in the analysis has |skewness| > 1, note in `caveats` that the distribution is
+  highly skewed and the mean overstates or understates the typical value. If caveats would be
+  null, set it to this note instead.
 """
 
 # ══════════════════════════════════════════════════════════════════════
@@ -129,6 +134,7 @@ def build_da_context(
     current_path: dict,
     tool_results: list[dict],
     cross_path_summary: dict | None = None,
+    column_skewness: dict | None = None,
 ) -> str:
     """
     Builds the user-turn message for the DA Agent.
@@ -166,6 +172,13 @@ def build_da_context(
         parts.append(f"\n--- Tool {i}: {tool_name} ---")
         parts.append(_truncate_result(result))
 
+    if column_skewness:
+        skew_lines = [f"  {col}: {round(val, 3)}" for col, val in column_skewness.items()]
+        parts.append(
+            "COLUMN_SKEWNESS (use |value| > 1 as threshold for highly skewed):\n"
+            + "\n".join(skew_lines)
+        )
+
     parts.append("\nBased on the above, generate your DA findings JSON.")
 
     return "\n".join(parts)
@@ -180,13 +193,14 @@ def call_da_agent(
     current_path: dict,
     tool_results: list[dict],
     cross_path_summary: dict | None = None,
+    column_skewness: dict | None = None,
 ) -> dict:
     """
     Sends path + tool results to DA Agent. Returns parsed response dict.
     Raises ValueError if JSON is malformed.
     Raises Exception for API failures.
     """
-    context = build_da_context(current_path, tool_results, cross_path_summary)
+    context = build_da_context(current_path, tool_results, cross_path_summary, column_skewness)
 
     response = with_backoff(
         client.messages.create,
@@ -227,6 +241,7 @@ def run_da_agent(
     current_path: dict,
     tool_results: list[dict],
     cross_path_summary: dict | None = None,
+    column_skewness: dict | None = None,
 ) -> dict:
     """
     Full DA gate execution.
@@ -234,7 +249,7 @@ def run_da_agent(
     Returns error dict on failure — never raises.
     """
     try:
-        raw = call_da_agent(current_path, tool_results, cross_path_summary)
+        raw = call_da_agent(current_path, tool_results, cross_path_summary, column_skewness)
         findings = DAFindings(**raw)
         return findings.model_dump()
 

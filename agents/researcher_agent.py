@@ -70,6 +70,16 @@ PATH ORTHOGONALITY — this is the most important constraint:
 - Every path must use at least one tool that does not appear in any other path. A path whose entire tool list is a subset of another path's tools is forbidden.
 - If you cannot find enough orthogonal paths given the available columns, reduce the count rather than returning overlapping paths.
 
+SKEWNESS-AWARE TOOL SELECTION:
+- The NUMERIC SUMMARY includes a `skew_flag` per column ("high_right", "high_left", or "normal").
+- If one or more columns are highly skewed, include `distribution_analysis` in AT MOST ONE path,
+  targeting only the single most skewed column (highest |skewness| value). Do not add
+  `distribution_analysis` to multiple paths just because multiple columns are skewed — this
+  would make the research plan homogeneous and wasteful.
+- When proposing `anomaly_detection` on a skewed column, note in the path rationale that
+  Z-score assumes normality; pair it with the one `distribution_analysis` call if it hasn't
+  been used yet, otherwise omit it.
+
 USER INTEREST PATH (conditional):
 If a USER_INTEREST section appears in the context, populate "user_interest_path" instead of leaving it null.
 This path is IN ADDITION to the required 3–5 paths above — do not replace a regular path with it.
@@ -262,7 +272,8 @@ def build_researcher_context(
         for col, stats in num_summary.items():
             num_lines.append(
                 f"  - {col}: mean={stats['mean']}, min={stats['min']}, max={stats['max']}, "
-                f"IQR outliers={stats['outliers_iqr_count']}"
+                f"IQR outliers={stats['outliers_iqr_count']}, "
+                f"skewness={stats.get('skewness', 'n/a')}, skew_flag={stats.get('skew_flag', 'n/a')}"
             )
         parts.append("NUMERIC SUMMARY:\n" + "\n".join(num_lines))
 

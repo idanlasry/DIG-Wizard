@@ -32,6 +32,14 @@ def get_dataset_profile(df: pd.DataFrame) -> dict:
     for col in numeric_cols:
         series = df[col].dropna()
 
+        skewness_val = round(float(series.skew()), 3)
+        if skewness_val > 1:
+            skew_flag = "high_right"
+        elif skewness_val < -1:
+            skew_flag = "high_left"
+        else:
+            skew_flag = "normal"
+
         # IQR outliers
         Q1 = series.quantile(0.25)
         Q3 = series.quantile(0.75)
@@ -58,6 +66,8 @@ def get_dataset_profile(df: pd.DataFrame) -> dict:
             "outlier_sample_values": [
                 round(float(v), 2) for v in iqr_outliers.head(5).tolist()
             ],
+            "skewness": skewness_val,
+            "skew_flag": skew_flag,
         }
 
     # ── 3. CATEGORICAL SUMMARY ─────────────────────────────────────────
