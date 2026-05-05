@@ -1181,9 +1181,6 @@ Upload any data file and a team of specialized AI agents will guide you from raw
         else:
             cfg = st.session_state.chart_configs
 
-            with st.expander("🔍 DEBUG: BI Agent raw output", expanded=True):
-                st.json(cfg)
-
             st.info(cfg["dashboard_narrative"])
 
             # KPI row
