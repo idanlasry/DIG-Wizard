@@ -261,7 +261,7 @@ def build_html_report(
                 marker=dict(color="#00ff9f", size=6),
             )
         else:
-            trace = go.Heatmap(z=chart["y"], colorscale="Viridis")
+            trace = go.Heatmap(z=[chart["y"]], colorscale="Viridis")
         fig = go.Figure(data=[trace])
         fig.update_layout(
             title=chart["title"],
@@ -1204,7 +1204,7 @@ Upload any data file and a team of specialized AI agents will guide you from raw
                 elif chart_type == "scatter":
                     trace = go.Scatter(x=chart["x"], y=chart["y"], mode="markers")
                 else:  # heatmap
-                    trace = go.Heatmap(z=chart["y"])
+                    trace = go.Heatmap(z=[chart["y"]])
 
                 fig = go.Figure(data=[trace])
                 fig.update_layout(
