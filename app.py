@@ -11,6 +11,7 @@ from agents.da_agent import run_da_agent
 from core.cross_path_aggregator import build_cross_path_summary
 from agents.bi_agent import run_bi_agent
 from agents.synthesis_agent import run_synthesis_agent
+from core.viz_kit import extract_trace
 import plotly.graph_objects as go
 import os
 
@@ -243,25 +244,7 @@ def build_html_report(
 
     chart_blocks = []
     for i, chart in enumerate(charts):
-        chart_type = chart["chart_type"]
-        if chart_type == "bar":
-            trace = go.Bar(x=chart["x"], y=chart["y"], marker_color="#00ff9f")
-        elif chart_type == "line":
-            trace = go.Scatter(
-                x=chart["x"],
-                y=chart["y"],
-                mode="lines",
-                line=dict(color="#00ff9f", width=2),
-            )
-        elif chart_type == "scatter":
-            trace = go.Scatter(
-                x=chart["x"],
-                y=chart["y"],
-                mode="markers",
-                marker=dict(color="#00ff9f", size=6),
-            )
-        else:
-            trace = go.Heatmap(z=[chart["y"]], colorscale="Viridis")
+        trace = extract_trace(chart, analysis_results)
         fig = go.Figure(data=[trace])
         fig.update_layout(
             title=chart["title"],
@@ -1181,6 +1164,9 @@ Upload any data file and a team of specialized AI agents will guide you from raw
         else:
             cfg = st.session_state.chart_configs
 
+            with st.expander("🔍 DEBUG: chart_configs", expanded=True):
+                st.json(cfg)
+
             st.info(cfg["dashboard_narrative"])
 
             # KPI row
@@ -1202,15 +1188,7 @@ Upload any data file and a team of specialized AI agents will guide you from raw
 
             # Charts
             for chart in cfg["charts"]:
-                chart_type = chart["chart_type"]
-                if chart_type == "bar":
-                    trace = go.Bar(x=chart["x"], y=chart["y"])
-                elif chart_type == "line":
-                    trace = go.Scatter(x=chart["x"], y=chart["y"], mode="lines")
-                elif chart_type == "scatter":
-                    trace = go.Scatter(x=chart["x"], y=chart["y"], mode="markers")
-                else:  # heatmap
-                    trace = go.Heatmap(z=[chart["y"]])
+                trace = extract_trace(chart, st.session_state.analysis_results)
 
                 fig = go.Figure(data=[trace])
                 fig.update_layout(

@@ -147,13 +147,14 @@ Produced by BI Developer Agent — validated by Pydantic
 **`charts` entry:**
 | Key | Type | Description |
 |---|---|---|
-| `chart_type` | str | `"bar"`, `"line"`, `"scatter"`, or `"heatmap"` |
+| `chart_type` | str | `"bar"`, `"line"`, or `"heatmap"` |
 | `title` | str | Chart title |
-| `x` | list | X-axis data |
-| `y` | list | Y-axis data |
 | `x_label` | str | X-axis label |
 | `y_label` | str | Y-axis label |
-| `source_path` | str | Research path title this chart derives from |
+| `source_path_index` | int | 0-based index into `analysis_results` |
+| `source_tool` | str | Name of the starter kit tool whose output to render |
+| `source_col` | str \| null | Column to disambiguate multi-run tools; null = aggregate all runs |
+| `source_path` | str | Research path title (display label) |
 | `explanation` | str | Caption text explaining the chart |
 
 ---
